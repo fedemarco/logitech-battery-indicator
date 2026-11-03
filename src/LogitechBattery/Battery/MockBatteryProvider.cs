@@ -15,8 +15,8 @@ public enum MockMode
 /// <summary>Fake battery source for development. Used from the UI thread only.</summary>
 public sealed class MockBatteryProvider : IBatteryProvider
 {
-    // Auto cycle: discharge 100 -> 5 at 1%/s, asleep 5 s, charge 5 -> 100 at 3%/s, full 10 s.
-    private const double DischargeSeconds = 95;
+    // Auto cycle: discharge 100 -> 5 at 1%/s (96 s), asleep 5 s, charge 5 -> 100 at 3%/s, full 10 s.
+    private const double DischargeSeconds = 96;
     private const double AsleepSeconds = 5;
     private const double ChargeSeconds = 95.0 / 3;
     private const double FullSeconds = 10;
