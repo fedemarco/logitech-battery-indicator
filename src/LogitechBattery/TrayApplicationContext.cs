@@ -117,7 +117,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _timer.Dispose();
         _notifyIcon.Visible = false; // hide first to avoid a ghost icon
         _notifyIcon.Dispose();
-        _menu.Dispose();
         ExitThread();
     }
 }
