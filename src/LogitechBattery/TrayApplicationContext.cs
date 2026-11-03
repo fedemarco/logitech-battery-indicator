@@ -17,7 +17,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         ("Not found", MockMode.NotFound),
     ];
 
-    private const int MaxTooltipLength = 127;
+    private const int MaxTooltipLength = 63;
 
     private readonly IBatteryProvider _provider;
     private readonly NotifyIcon _notifyIcon;
@@ -80,9 +80,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             line = (await _provider.ReadAsync()).ToDisplayString();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            line = $"Battery read failed: {ex.Message}";
+            line = "Battery read failed";
         }
         finally
         {
@@ -98,15 +98,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var version = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
 
-        // Shorten "+<sha>" build metadata to 7 characters.
+        // Drop "+<sha>" build metadata.
         var plus = version.IndexOf('+');
-        if (plus >= 0 && version.Length - plus - 1 > 7)
-            version = version[..(plus + 1 + 7)];
+        if (plus >= 0)
+            version = version[..plus];
 
         var text = $"Logitech Battery {version}";
         if (statusLine is not null)
             text = $"{statusLine}\n{text}";
-        // NotifyIcon.Text throws at 128+ characters (limit is 127 since .NET Core 3.0).
+        // Safety cap: classic NotifyIcon.Text limit is 63 characters (longer throws).
         return text.Length > MaxTooltipLength ? text[..MaxTooltipLength] : text;
     }
 
