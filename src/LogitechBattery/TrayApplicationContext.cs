@@ -26,7 +26,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly int _iconSize = SystemInformation.SmallIconSize.Width;
     private Icon? _icon;
     private TrayIndicator? _indicator;
-    private bool _lightTaskbar = TrayIconRenderer.IsTaskbarLight();
     private bool _refreshing;
     private bool _exited;
 
@@ -70,18 +69,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _timer.Tick += (_, _) => _ = RefreshAsync();
         _timer.Start();
 
-        Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
-
-        _ = RefreshAsync();
-    }
-
-    private void OnUserPreferenceChanged(object? sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
-    {
-        var light = TrayIconRenderer.IsTaskbarLight();
-        if (light == _lightTaskbar || _exited)
-            return;
-        _lightTaskbar = light;
-        _indicator = null; // forces a redraw on the next refresh
         _ = RefreshAsync();
     }
 
@@ -116,7 +103,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (indicator != _indicator)
         {
             var old = _icon;
-            _icon = TrayIconRenderer.Render(indicator, _iconSize, _lightTaskbar);
+            _icon = TrayIconRenderer.Render(indicator, _iconSize);
             _notifyIcon.Icon = _icon;
             _indicator = indicator;
             old?.Dispose();
@@ -143,7 +130,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void ExitApp()
     {
         _exited = true;
-        Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
         _timer.Stop();
         _timer.Dispose();
         _notifyIcon.Visible = false; // hide first to avoid a ghost icon
