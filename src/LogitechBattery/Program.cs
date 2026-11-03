@@ -1,3 +1,5 @@
+using LogitechBattery.Battery;
+
 namespace LogitechBattery;
 
 internal static class Program
@@ -10,6 +12,6 @@ internal static class Program
             return;
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new TrayApplicationContext());
+        Application.Run(new TrayApplicationContext(new MockBatteryProvider()));
     }
 }
