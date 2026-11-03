@@ -63,7 +63,7 @@ internal static class TrayIconRenderer
 
     private static (Color Back, Color Fore) Colors(IndicatorColor color) => color switch
     {
-        IndicatorColor.Green => (Color.FromArgb(21, 128, 61), Color.White),
+        IndicatorColor.Green => (Color.FromArgb(22, 163, 74), Color.White),
         IndicatorColor.Orange => (Color.FromArgb(245, 158, 11), Dark), // white is too weak on orange
         IndicatorColor.Red => (Color.FromArgb(220, 38, 38), Color.White),
         _ => (Color.FromArgb(107, 114, 128), Color.White),
