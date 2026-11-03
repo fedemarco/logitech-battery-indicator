@@ -14,6 +14,8 @@ public class TrayIndicatorTests
     [InlineData(50, "50", IndicatorColor.Green)]
     [InlineData(99, "99", IndicatorColor.Green)]
     [InlineData(100, "100", IndicatorColor.Green)]
+    [InlineData(150, "100", IndicatorColor.Green)]
+    [InlineData(-5, "0", IndicatorColor.Red)]
     public void Text_and_color_boundaries(int percent, string text, IndicatorColor color) =>
         Assert.Equal(new TrayIndicator(text, color, false),
             TrayIndicator.From(Make(ConnectionState.Connected, percent, ChargingState.Discharging)));
@@ -24,6 +26,11 @@ public class TrayIndicatorTests
     [InlineData(ChargingState.Discharging, false)]
     public void Bolt_only_when_charging(ChargingState state, bool bolt) =>
         Assert.Equal(bolt, TrayIndicator.From(Make(ConnectionState.Connected, 60, state)).Charging);
+
+    [Fact]
+    public void Full_at_100_shows_100_without_bolt() =>
+        Assert.Equal(new TrayIndicator("100", IndicatorColor.Green, false),
+            TrayIndicator.From(Make(ConnectionState.Connected, 100, ChargingState.Full)));
 
     [Fact]
     public void Unavailable_is_gray_dash()
