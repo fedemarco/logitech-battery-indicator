@@ -32,28 +32,16 @@ public class TrayIndicatorTests
 
     [Fact]
     public void Full_at_100_is_plain_full_battery() =>
-        Assert.Equal(new TrayIndicator("battery100", IndicatorTint.Green),
+        Assert.Equal(new TrayIndicator("battery100"),
             TrayIndicator.From(Make(ConnectionState.Connected, 100, ChargingState.Full)));
 
     [Fact]
     public void Unavailable_is_unknown_icon()
     {
-        var unknown = new TrayIndicator("battery_unknown", IndicatorTint.None);
+        var unknown = new TrayIndicator("battery_unknown");
         Assert.Equal(unknown, TrayIndicator.From(null));
         Assert.Equal(unknown, TrayIndicator.From(Make(ConnectionState.Asleep, 50, ChargingState.Charging)));
         Assert.Equal(unknown, TrayIndicator.From(Make(ConnectionState.NotFound, 50, ChargingState.Discharging)));
         Assert.Equal(unknown, TrayIndicator.From(Make(ConnectionState.Connected, null, ChargingState.Charging)));
-    }
-
-    [Theory]
-    [InlineData(0, IndicatorTint.Red)]
-    [InlineData(14, IndicatorTint.Red)]
-    [InlineData(15, IndicatorTint.Orange)]
-    [InlineData(49, IndicatorTint.Orange)]
-    [InlineData(50, IndicatorTint.Green)]
-    public void Tint_follows_level(int percent, IndicatorTint tint)
-    {
-        Assert.Equal(tint, TrayIndicator.From(Make(ConnectionState.Connected, percent, ChargingState.Discharging)).Tint);
-        Assert.Equal(tint, TrayIndicator.From(Make(ConnectionState.Connected, percent, ChargingState.Charging)).Tint);
     }
 }

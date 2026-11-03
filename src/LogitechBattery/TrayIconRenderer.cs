@@ -4,7 +4,7 @@ using LogitechBattery.Battery;
 
 namespace LogitechBattery;
 
-/// <summary>Draws a <see cref="TrayIndicator"/> from the embedded razer-taskbar gauge icons (32x32 PNG).</summary>
+/// <summary>Draws a <see cref="TrayIndicator"/> from the embedded razer-taskbar gauge icons (32x32 PNG), colors as-is.</summary>
 internal static class TrayIconRenderer
 {
     private static readonly Dictionary<string, Bitmap> Cache = [];
@@ -15,14 +15,13 @@ internal static class TrayIconRenderer
     // shortcut: icon size taken at startup; redraw on DPI change if users switch scaling
     public static Icon Render(TrayIndicator indicator, int size)
     {
-        var source = Load(indicator);
+        var source = Load(indicator.Icon);
 
         using var bitmap = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(bitmap))
         {
-            // Bilinear + half-pixel offset averages each 2x2 block exactly at 32 -> 16, which keeps pixel-art lines
-            // crisp without assuming the art is 2-px aligned; other sizes still scale smoothly.
-            g.InterpolationMode = InterpolationMode.HighQualityBilinear;
+            // The art is drawn in 2x2 blocks, so nearest-neighbor at 32 -> 16 is pixel-exact.
+            g.InterpolationMode = InterpolationMode.NearestNeighbor;
             g.PixelOffsetMode = PixelOffsetMode.Half;
             g.DrawImage(source, new Rectangle(0, 0, size, size));
         }
@@ -39,36 +38,14 @@ internal static class TrayIconRenderer
         }
     }
 
-    private static Bitmap Load(TrayIndicator indicator)
+    private static Bitmap Load(string icon)
     {
-        var key = $"{indicator.Icon}|{indicator.Tint}";
-        if (Cache.TryGetValue(key, out var cached))
+        if (Cache.TryGetValue(icon, out var cached))
             return cached;
 
-        using var stream = typeof(TrayIconRenderer).Assembly.GetManifestResourceStream(indicator.Icon + ".png")
-            ?? throw new InvalidOperationException($"Missing icon resource {indicator.Icon}");
+        using var stream = typeof(TrayIconRenderer).Assembly.GetManifestResourceStream(icon + ".png")
+            ?? throw new InvalidOperationException($"Missing icon resource {icon}");
         using var png = new Bitmap(stream);
-        var bitmap = new Bitmap(png.Width, png.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(bitmap))
-            g.DrawImageUnscaled(png, 0, 0);
-
-        if (indicator.Tint is IndicatorTint.Orange or IndicatorTint.Red)
-            Recolor(bitmap, indicator.Tint == IndicatorTint.Orange ? Color.FromArgb(245, 158, 11) : Color.FromArgb(220, 38, 38));
-
-        return Cache[key] = bitmap;
-    }
-
-    /// <summary>Replaces green pixels (G clearly above R and B) with <paramref name="target"/>, keeping brightness and alpha.</summary>
-    private static void Recolor(Bitmap bitmap, Color target)
-    {
-        for (var y = 0; y < bitmap.Height; y++)
-            for (var x = 0; x < bitmap.Width; x++)
-            {
-                var c = bitmap.GetPixel(x, y);
-                if (c.A == 0 || c.G < c.R + 40 || c.G < c.B + 40)
-                    continue; // transparent or the dark fill
-                var k = c.G / 255f; // brightness relative to a full-intensity green
-                bitmap.SetPixel(x, y, Color.FromArgb(c.A, (int)(target.R * k), (int)(target.G * k), (int)(target.B * k)));
-            }
+        return Cache[icon] = new Bitmap(png); // copy: a Bitmap needs its stream alive, this one doesn't
     }
 }
