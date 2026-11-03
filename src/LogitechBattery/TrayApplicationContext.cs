@@ -17,14 +17,20 @@ internal sealed class TrayApplicationContext : ApplicationContext
         ("Not found", MockMode.NotFound),
     ];
 
+    private const int MaxTooltipLength = 127;
+
     private readonly IBatteryProvider _provider;
     private readonly NotifyIcon _notifyIcon;
+    private readonly ContextMenuStrip _menu;
+    private readonly System.Windows.Forms.Timer _timer;
+    private bool _refreshing;
+    private bool _exited;
 
     public TrayApplicationContext(IBatteryProvider provider)
     {
         _provider = provider;
 
-        var menu = new ContextMenuStrip();
+        var menu = _menu = new ContextMenuStrip();
 
         if (provider is MockBatteryProvider mock)
         {
@@ -55,13 +61,36 @@ internal sealed class TrayApplicationContext : ApplicationContext
             Visible = true,
         };
 
+        // 1 s is for the mock; the real refresh interval comes in milestone 6.
+        _timer = new System.Windows.Forms.Timer { Interval = 1000 };
+        _timer.Tick += (_, _) => _ = RefreshAsync();
+        _timer.Start();
+
         _ = RefreshAsync();
     }
 
     private async Task RefreshAsync()
     {
-        var status = await _provider.ReadAsync();
-        _notifyIcon.Text = BuildTooltip(status.ToDisplayString());
+        if (_refreshing || _exited)
+            return;
+
+        _refreshing = true;
+        string line;
+        try
+        {
+            line = (await _provider.ReadAsync()).ToDisplayString();
+        }
+        catch (Exception ex)
+        {
+            line = $"Battery read failed: {ex.Message}";
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+
+        if (!_exited)
+            _notifyIcon.Text = BuildTooltip(line);
     }
 
     private static string BuildTooltip(string? statusLine)
@@ -77,13 +106,18 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var text = $"Logitech Battery {version}";
         if (statusLine is not null)
             text = $"{statusLine}\n{text}";
-        return text.Length > 63 ? text[..63] : text;
+        // NotifyIcon.Text throws at 128+ characters (limit is 127 since .NET Core 3.0).
+        return text.Length > MaxTooltipLength ? text[..MaxTooltipLength] : text;
     }
 
     private void ExitApp()
     {
-        _notifyIcon.Visible = false;
+        _exited = true;
+        _timer.Stop();
+        _timer.Dispose();
+        _notifyIcon.Visible = false; // hide first to avoid a ghost icon
         _notifyIcon.Dispose();
+        _menu.Dispose();
         ExitThread();
     }
 }
