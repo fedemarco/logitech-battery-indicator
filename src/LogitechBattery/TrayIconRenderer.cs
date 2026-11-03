@@ -30,11 +30,12 @@ internal static class TrayIconRenderer
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
             var (back, fore) = Colors(indicator.Color);
-            using (var badge = RoundedRect(new RectangleF(0, 0, size, size), size * 0.22f))
+            var margin = Math.Max(1, size / 16);
+            using (var badge = RoundedRect(new RectangleF(margin, margin, size - 2 * margin, size - 2 * margin), size * 0.2f))
             using (var brush = new SolidBrush(back))
                 g.FillPath(brush, badge);
 
-            DrawText(g, indicator.Text, size, fore);
+            DrawText(g, indicator.Text, size, margin, fore);
 
             if (indicator.Charging)
             {
@@ -68,26 +69,54 @@ internal static class TrayIconRenderer
         _ => (Color.FromArgb(107, 114, 128), Color.White),
     };
 
-    private static void DrawText(Graphics g, string text, int size, Color color)
+    // Families are looked up once. GDI+ lists Bahnschrift's named instances as separate (31-char truncated) names.
+    private static readonly Lazy<FontFamily> NarrowFont = new(() => FindFamily(
+        "Bahnschrift SemiBold SemiConden", "Bahnschrift SemiCondensed"));
+    private static readonly Lazy<FontFamily> NarrowestFont = new(() => FindFamily(
+        "Bahnschrift SemiBold Condensed", "Bahnschrift Condensed", "Bahnschrift SemiBold SemiConden", "Bahnschrift SemiCondensed"));
+
+    private static FontFamily FindFamily(params string[] names)
     {
-        using var path = new GraphicsPath();
-        using var family = new FontFamily("Segoe UI");
+        using var installed = new InstalledFontCollection();
+        foreach (var name in names.Append("Segoe UI"))
+            foreach (var f in installed.Families)
+                if (f.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                    return f;
+        return FontFamily.GenericSansSerif; // never throws if Windows fonts are missing
+    }
+
+    private static void DrawText(Graphics g, string text, int size, int margin, Color color)
+    {
+        // Grid-fit (hinted) AA; ClearType would fringe on the transparent bitmap.
+        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        var family = text.Length >= 3 ? NarrowestFont.Value : NarrowFont.Value;
+        var style = family.IsStyleAvailable(FontStyle.Regular) ? FontStyle.Regular : FontStyle.Bold;
         using var format = StringFormat.GenericTypographic; // returns a new instance each call
-        path.AddString(text, family, (int)FontStyle.Bold, size * 0.78f, PointF.Empty, format);
 
-        var bounds = path.GetBounds();
-        // Condense horizontally (keeping height) when the digits are wider than the badge, e.g. "100" at 16 px.
-        var maxWidth = size - Math.Max(2f, size * 0.1f);
-        var sx = Math.Min(1f, maxWidth / bounds.Width);
+        var innerWidth = size - 2 * margin - 1f; // 1 px breathing room inside the badge
+        var innerHeight = size - 2 * margin - 2f;
+        const float DigitHeight = 0.7f; // digit height ~ cap height, as a fraction of the em
+        var px = size;
+        Font? font = null;
+        SizeF measured = default;
+        for (; px > 4; px--)
+        {
+            font?.Dispose();
+            font = new Font(family, px, style, GraphicsUnit.Pixel);
+            measured = g.MeasureString(text, font, PointF.Empty, format);
+            if (measured.Width <= innerWidth && px * DigitHeight <= innerHeight) break;
+        }
 
-        using var m = new Matrix();
-        m.Translate(size / 2f, size / 2f);
-        m.Scale(sx, 1f);
-        m.Translate(-(bounds.X + bounds.Width / 2f), -(bounds.Y + bounds.Height / 2f));
-        path.Transform(m);
-
-        using var brush = new SolidBrush(color);
-        g.FillPath(brush, path);
+        using (font)
+        {
+            // Center the digits' height (no descenders), not the line height; baseline = digit bottom.
+            var ascent = px * family.GetCellAscent(style) / family.GetEmHeight(style);
+            var baseline = size / 2f + px * DigitHeight / 2f;
+            var x = MathF.Round((size - measured.Width) / 2f);
+            var y = MathF.Round(baseline - ascent);
+            using var brush = new SolidBrush(color);
+            g.DrawString(text, font!, brush, x, y, format);
+        }
     }
 
     private static GraphicsPath RoundedRect(RectangleF r, float radius)
