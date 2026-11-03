@@ -98,10 +98,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var version = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
 
-        // Drop "+<sha>" build metadata.
+        // Dev builds (prerelease part) keep "+<sha>" shortened to 7 chars; releases show only the semantic version.
         var plus = version.IndexOf('+');
         if (plus >= 0)
-            version = version[..plus];
+            version = version[..plus].Contains('-') ? version[..Math.Min(version.Length, plus + 1 + 7)] : version[..plus];
 
         var text = $"Logitech Battery {version}";
         if (statusLine is not null)
