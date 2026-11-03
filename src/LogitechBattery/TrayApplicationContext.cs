@@ -23,6 +23,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _menu;
     private readonly System.Windows.Forms.Timer _timer;
+    private readonly int _iconSize = SystemInformation.SmallIconSize.Width;
+    private Icon? _icon;
+    private TrayIndicator? _indicator;
     private bool _refreshing;
     private bool _exited;
 
@@ -55,7 +58,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _notifyIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = SystemIcons.Application, // replaced by the first refresh
             Text = BuildTooltip(null),
             ContextMenuStrip = menu,
             Visible = true,
@@ -76,9 +79,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _refreshing = true;
         string line;
+        BatteryStatus? status = null;
         try
         {
-            line = (await _provider.ReadAsync()).ToDisplayString();
+            status = await _provider.ReadAsync();
+            line = status.ToDisplayString();
         }
         catch (Exception)
         {
@@ -89,8 +94,20 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _refreshing = false;
         }
 
-        if (!_exited)
-            _notifyIcon.Text = BuildTooltip(line);
+        if (_exited)
+            return;
+
+        _notifyIcon.Text = BuildTooltip(line);
+
+        var indicator = TrayIndicator.From(status);
+        if (indicator != _indicator)
+        {
+            var old = _icon;
+            _icon = TrayIconRenderer.Render(indicator, _iconSize);
+            _notifyIcon.Icon = _icon;
+            _indicator = indicator;
+            old?.Dispose();
+        }
     }
 
     private static string BuildTooltip(string? statusLine)
@@ -117,6 +134,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _timer.Dispose();
         _notifyIcon.Visible = false; // hide first to avoid a ghost icon
         _notifyIcon.Dispose();
+        _icon?.Dispose();
         ExitThread();
     }
 }
