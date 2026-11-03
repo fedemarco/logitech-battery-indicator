@@ -72,7 +72,8 @@ internal static class TrayIconRenderer
     {
         using var path = new GraphicsPath();
         using var family = new FontFamily("Segoe UI");
-        path.AddString(text, family, (int)FontStyle.Bold, size * 0.78f, PointF.Empty, StringFormat.GenericTypographic);
+        using var format = StringFormat.GenericTypographic; // returns a new instance each call
+        path.AddString(text, family, (int)FontStyle.Bold, size * 0.78f, PointF.Empty, format);
 
         var bounds = path.GetBounds();
         // Condense horizontally (keeping height) when the digits are wider than the badge, e.g. "100" at 16 px.
