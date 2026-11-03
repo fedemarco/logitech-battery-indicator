@@ -19,4 +19,8 @@
     <DebugType>embedded</DebugType>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\*.png" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>
