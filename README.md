@@ -4,6 +4,10 @@ Windows tray app showing the battery level of a Logitech PRO X2 SUPERSTRIKE mous
 
 The tray icon shows the mouse battery, read over HID++ via the Lightspeed receiver or the USB cable (read every 60 s, and more often for a few minutes after the cable or receiver is plugged in or unplugged). Diagnostics go to `%LOCALAPPDATA%\LogitechBattery\log.txt`.
 
+The app shows a Windows notification when the battery drops to 15 % ("low") and again at 5 % ("critical"), once per discharge.
+
+"Start with Windows" in the tray menu is on by default and can be unticked at any time. It is stored in the per-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` key, no admin rights needed.
+
 `LogitechBattery.exe --mock` starts with a simulated battery and a Simulator menu instead of reading the mouse.
 
 Third-party notices (battery icons, HidSharp): [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
