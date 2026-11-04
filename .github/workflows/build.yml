@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  # Pushes to main / manual runs: unversioned dev build (0.1.0-dev.<run>+<sha>).
+  # Pushes to main / manual runs: unversioned dev build (<VersionPrefix>-dev.<run>+<sha>).
   dev:
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
