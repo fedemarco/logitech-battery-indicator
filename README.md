@@ -2,7 +2,7 @@
 
 Windows tray app showing the battery level of a Logitech PRO X2 SUPERSTRIKE mouse (C# / .NET 10, WinForms, HID++).
 
-**Status:** early development. A minimal tray app exists; battery reading is not implemented yet. See [docs/PLAN.md](docs/PLAN.md).
+**Status:** early development. The tray app works with simulated battery data; reading the real mouse is in progress.
 
 Third-party notices (battery icons, HidSharp): [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
@@ -56,12 +56,3 @@ Bump `VersionPrefix` in the csproj if needed, then:
 ```sh
 git tag vX.Y.Z && git push origin vX.Y.Z
 ```
-
-## Version plan
-
-| Version | After milestone |
-|---------|-----------------|
-| v0.1.0  | 4 (tray indicator) |
-| v0.2.0  | 5-6 (HID++ reading, refresh, charging) |
-| v0.3.0  | 7-8 (notifications, startup) |
-| v1.0.0  | 9 (polish, packaging) |

@@ -64,7 +64,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             Visible = true,
         };
 
-        // 1 s is for the mock; the real refresh interval comes in milestone 6.
+        // 1 s is for the mock; the real device will be polled less often.
         _timer = new System.Windows.Forms.Timer { Interval = 1000 };
         _timer.Tick += (_, _) => _ = RefreshAsync();
         _timer.Start();
