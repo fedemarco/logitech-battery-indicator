@@ -8,6 +8,7 @@ namespace LogitechBattery;
 internal sealed class HidPpBatteryProvider : IBatteryProvider
 {
     private const byte SwId = 0x0A;
+    private const int WriteTimeoutMs = 200;
     private static readonly TimeSpan DiscoveryTimeout = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(1);
 
@@ -67,6 +68,7 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
             using (stream)
             {
                 stream.ReadTimeout = 200;
+                stream.WriteTimeout = WriteTimeoutMs;
                 var request = HidPpMessage.BuildRequest(target.DeviceIndex, target.FeatureIndex, UnifiedBattery.GetStatusFunction, SwId);
                 var response = Exchange(stream, request, ReadTimeout);
                 if (response is null)
@@ -76,7 +78,7 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
                 return status;
             }
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or TimeoutException)
         {
             return Lost(target, now, retry); // unplugged mid-read
         }
@@ -118,6 +120,7 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
                 using (stream)
                 {
                     stream.ReadTimeout = 200;
+                    stream.WriteTimeout = WriteTimeoutMs;
                     foreach (var index in pass)
                     {
                         try
@@ -134,7 +137,7 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
                                 return new Target(device.Long.DevicePath, index, feature);
                             }
                         }
-                        catch (IOException) { break; }
+                        catch (Exception ex) when (ex is IOException or TimeoutException) { break; }
                     }
                 }
             }
