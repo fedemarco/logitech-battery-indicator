@@ -32,6 +32,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     ];
 
     private readonly IBatteryProvider _provider;
+    private readonly LowBatteryAlerts _alerts = new();
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _menu;
     private readonly System.Windows.Forms.Timer _timer;
@@ -173,12 +174,24 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 _indicator = indicator;
                 old?.Dispose();
             }
+
+            if (status is not null && _alerts.Update(status) is { } alert)
+                ShowAlert(alert, status.Percent);
         }
         catch (Exception ex)
         {
             AppLog.Write($"Tray update failed: {ex}"); // keep the previous icon
         }
         return (true, status);
+    }
+
+    private void ShowAlert(BatteryAlert alert, int? percent)
+    {
+        var (title, text) = alert == BatteryAlert.Critical
+            ? ("Mouse battery critical", $"{percent}% left.")
+            : ("Mouse battery low", $"{percent}% left. Charge it soon.");
+        AppLog.Write($"Notification: {title} ({percent}%)");
+        _notifyIcon.ShowBalloonTip(10_000, title, text, ToolTipIcon.Warning);
     }
 
     private static string BuildTooltip(string? statusLine)
