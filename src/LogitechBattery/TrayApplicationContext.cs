@@ -37,7 +37,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _timer;
     private readonly System.Windows.Forms.Timer _followUp = new();
     private int _followUpStep;
-    private SynchronizationContext? _ui;
+    private volatile SynchronizationContext? _ui;
     private readonly int _iconSize = SystemInformation.SmallIconSize.Width;
     private Icon? _icon;
     private TrayIndicator? _indicator;
@@ -47,6 +47,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     public TrayApplicationContext(IBatteryProvider provider)
     {
         _provider = provider;
+        if (SynchronizationContext.Current is WindowsFormsSynchronizationContext ui)
+            _ui = ui; // otherwise captured on the first idle
 
         var menu = _menu = new ContextMenuStrip();
 
@@ -114,7 +116,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         void FirstRefresh(object? sender, EventArgs e)
         {
             Application.Idle -= FirstRefresh;
-            _ui = SynchronizationContext.Current;
+            _ui ??= SynchronizationContext.Current;
             _ = RefreshAsync();
         }
         Application.Idle += FirstRefresh;
