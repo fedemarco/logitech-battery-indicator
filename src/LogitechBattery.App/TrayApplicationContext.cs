@@ -17,7 +17,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         ("Not found", MockMode.NotFound),
     ];
 
+    private const int MockPollIntervalMs = 1000;
+    private const int PollIntervalMs = 60_000;
+    private const int BalloonTimeoutMs = 10_000;
     private const int MaxTooltipLength = 63;
+    private const int ShortShaLength = 7;
 
     // Reads after a USB change: the cable shows up at once, but the mouse can take a while to
     // reconnect wirelessly. 1 s, then every 5 s for a minute, every 10 s, 15 s and 30 s for a minute
@@ -31,10 +35,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
         .. Enumerable.Repeat(30_000, 2),
     ];
 
+    private enum FollowUpDecision
+    {
+        /// <summary>The mouse is connected: nothing more to chase.</summary>
+        Stop,
+
+        /// <summary>Another read was in flight and this one was skipped: try the same step again.</summary>
+        RetrySameStep,
+
+        /// <summary>The read failed or the mouse is not connected yet.</summary>
+        NextStep,
+    }
+
     private readonly IBatteryProvider _provider;
     private readonly BatteryAlerts _alerts = new();
     private readonly NotifyIcon _notifyIcon;
-    private readonly ContextMenuStrip _menu;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly System.Windows.Forms.Timer _followUp = new();
     private int _followUpStep;
@@ -51,42 +66,22 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (SynchronizationContext.Current is WindowsFormsSynchronizationContext ui)
             _ui = ui; // otherwise captured on the first idle
 
-        var menu = _menu = new ContextMenuStrip();
-
+        var menu = new ContextMenuStrip();
+        int pollIntervalMs;
         if (provider is MockBatteryProvider mock)
         {
-            var simulator = new ToolStripMenuItem("Simulator");
-            foreach (var (label, mode) in SimulatorItems)
-            {
-                var item = new ToolStripMenuItem(label) { Checked = mock.Mode == mode, Tag = mode };
-                item.Click += (_, _) =>
-                {
-                    mock.Mode = mode;
-                    foreach (ToolStripMenuItem other in simulator.DropDownItems)
-                        other.Checked = (MockMode)other.Tag! == mode;
-                    _ = RefreshAsync();
-                };
-                simulator.DropDownItems.Add(item);
-            }
-            menu.Items.Add(simulator);
+            menu.Items.Add(BuildSimulatorMenu(mock));
             menu.Items.Add(new ToolStripSeparator());
+            pollIntervalMs = MockPollIntervalMs;
         }
-
-        if (provider is not MockBatteryProvider)
+        else
         {
             AutoStart.EnableOnFirstRun();
-            var startItem = new ToolStripMenuItem("Start with Windows");
-            startItem.Click += (_, _) =>
-            {
-                if (AutoStart.IsEnabled())
-                    AutoStart.Disable();
-                else
-                    AutoStart.Enable(); // also rewrites a stale path and clears a Task Manager "disabled"
-            };
+            var startItem = BuildStartupItem();
             menu.Opening += (_, _) => startItem.Checked = AutoStart.IsEnabled();
             menu.Items.Add(startItem);
+            pollIntervalMs = PollIntervalMs;
         }
-
         menu.Items.Add("Exit", null, (_, _) => ExitApp());
 
         _notifyIcon = new NotifyIcon
@@ -97,57 +92,109 @@ internal sealed class TrayApplicationContext : ApplicationContext
             Visible = true,
         };
 
-        _timer = new System.Windows.Forms.Timer { Interval = provider is MockBatteryProvider ? 1000 : 60_000 };
-        _timer.Tick += (_, _) => _ = RefreshAsync();
-        _timer.Start();
-
-        _followUp.Tick += async (_, _) =>
-        {
-            try
-            {
-                _followUp.Stop();
-                var (ran, status) = await RefreshAsync();
-                if (_exited)
-                    return;
-                // Skipped (another read in flight): retry the same step. Failed or not connected: next step.
-                if (ran && status?.Connection == ConnectionState.Connected)
-                    return;
-                if (ran)
-                    _followUpStep++;
-                if (_followUpStep < FollowUpDelays.Length)
-                {
-                    _followUp.Interval = FollowUpDelays[_followUpStep];
-                    _followUp.Start();
-                }
-            }
-            catch (Exception ex)
-            {
-                AppLog.Write($"Follow-up read failed: {ex}"); // never escape an async void handler
-            }
-        };
+        _timer = StartPollTimer(pollIntervalMs);
+        _followUp.Tick += OnFollowUpTickAsync;
         if (provider is HidPpBatteryProvider hid)
             hid.DevicesChanged += OnDevicesChanged;
 
-        // First refresh once the message loop runs, so awaited reads resume on the UI thread.
-        void FirstRefresh(object? sender, EventArgs e)
-        {
-            Application.Idle -= FirstRefresh;
-            _ui ??= SynchronizationContext.Current;
-            _ = RefreshAsync();
-        }
-        Application.Idle += FirstRefresh;
+        Application.Idle += OnFirstIdle;
     }
 
-    // Background thread: hop to the UI thread and (re)start the follow-up reads.
+    private ToolStripMenuItem BuildSimulatorMenu(MockBatteryProvider mock)
+    {
+        var simulator = new ToolStripMenuItem("Simulator");
+        foreach (var (label, mode) in SimulatorItems)
+        {
+            var item = new ToolStripMenuItem(label) { Checked = mock.Mode == mode, Tag = mode };
+            item.Click += (_, _) =>
+            {
+                mock.Mode = mode;
+                foreach (ToolStripMenuItem other in simulator.DropDownItems)
+                    other.Checked = (MockMode)other.Tag! == mode;
+                _ = RefreshAsync();
+            };
+            simulator.DropDownItems.Add(item);
+        }
+        return simulator;
+    }
+
+    private static ToolStripMenuItem BuildStartupItem()
+    {
+        var startItem = new ToolStripMenuItem("Start with Windows");
+        startItem.Click += (_, _) =>
+        {
+            if (AutoStart.IsEnabled())
+                AutoStart.Disable();
+            else
+                AutoStart.Enable(); // also rewrites a stale path and clears a Task Manager "disabled"
+        };
+        return startItem;
+    }
+
+    private System.Windows.Forms.Timer StartPollTimer(int intervalMs)
+    {
+        var timer = new System.Windows.Forms.Timer { Interval = intervalMs };
+        timer.Tick += (_, _) => _ = RefreshAsync();
+        timer.Start();
+        return timer;
+    }
+
+    // First refresh once the message loop runs, so awaited reads resume on the UI thread.
+    private void OnFirstIdle(object? sender, EventArgs e)
+    {
+        Application.Idle -= OnFirstIdle;
+        _ui ??= SynchronizationContext.Current;
+        _ = RefreshAsync();
+    }
+
+    // Background thread: hop to the UI thread and restart the follow-up reads.
     private void OnDevicesChanged() => _ui?.Post(_ =>
     {
         if (_exited)
             return;
-        _followUpStep = 0;
         _followUp.Stop();
-        _followUp.Interval = FollowUpDelays[0];
-        _followUp.Start();
+        ScheduleFollowUp(step: 0);
     }, null);
+
+    private async void OnFollowUpTickAsync(object? sender, EventArgs e)
+    {
+        try
+        {
+            _followUp.Stop();
+            var (ran, status) = await RefreshAsync();
+            if (_exited)
+                return;
+
+            switch (DecideFollowUp(ran, status))
+            {
+                case FollowUpDecision.RetrySameStep:
+                    ScheduleFollowUp(_followUpStep);
+                    break;
+                case FollowUpDecision.NextStep:
+                    ScheduleFollowUp(_followUpStep + 1);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write($"Follow-up read failed: {ex}"); // never escape an async void handler
+        }
+    }
+
+    private static FollowUpDecision DecideFollowUp(bool ran, BatteryStatus? status) =>
+        !ran ? FollowUpDecision.RetrySameStep
+        : status?.Connection == ConnectionState.Connected ? FollowUpDecision.Stop
+        : FollowUpDecision.NextStep;
+
+    /// <summary>Runs the follow-up read for <paramref name="step"/>; past the last step the regular poll takes over.</summary>
+    private void ScheduleFollowUp(int step)
+    {
+        _followUpStep = step;
+        if (step >= FollowUpDelays.Length)
+            return;
+        _followUp.Interval = FollowUpDelays[step];
+        _followUp.Start();
+    }
 
     /// <summary>Ran is false when skipped; Status is null when skipped or the read failed.</summary>
     private async Task<(bool Ran, BatteryStatus? Status)> RefreshAsync()
@@ -156,39 +203,37 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return (false, null);
 
         _refreshing = true;
-        string line;
+        string statusLine;
         BatteryStatus? status = null;
         try
         {
             status = await _provider.ReadAsync();
-            line = status.ToDisplayString();
+            statusLine = status.ToDisplayString();
         }
         catch (Exception)
         {
             // the provider logs the details
-            line = "Battery read failed";
+            statusLine = "Battery read failed";
         }
         finally
         {
             _refreshing = false;
         }
 
-        if (_exited)
-            return (true, status);
+        if (!_exited) // the tray icon is gone if the app exited during the read
+            UpdateTray(status, statusLine);
+        return (true, status);
+    }
 
+    private void UpdateTray(BatteryStatus? status, string statusLine)
+    {
         try
         {
-            _notifyIcon.Text = BuildTooltip(line);
+            _notifyIcon.Text = BuildTooltip(statusLine);
 
             var indicator = TrayIndicator.From(status);
             if (indicator != _indicator)
-            {
-                var old = _icon;
-                _icon = TrayIconRenderer.Render(indicator, _iconSize);
-                _notifyIcon.Icon = _icon;
-                _indicator = indicator;
-                old?.Dispose();
-            }
+                ReplaceIcon(indicator);
 
             if (status is not null && _alerts.Update(status) is { } alert)
                 ShowAlert(alert, status.Percent);
@@ -197,7 +242,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             AppLog.Write($"Tray update failed: {ex}"); // keep the previous icon
         }
-        return (true, status);
+    }
+
+    private void ReplaceIcon(TrayIndicator indicator)
+    {
+        var oldIcon = _icon;
+        _icon = TrayIconRenderer.Render(indicator, _iconSize);
+        _notifyIcon.Icon = _icon;
+        _indicator = indicator;
+        oldIcon?.Dispose();
     }
 
     private void ShowAlert(BatteryAlert alert, int? percent)
@@ -206,27 +259,35 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             BatteryAlert.Critical => ("Mouse battery critical", $"{percent}% left.", ToolTipIcon.Warning),
             BatteryAlert.Low => ("Mouse battery low", $"{percent}% left. Charge it soon.", ToolTipIcon.Warning),
-            _ => ("Mouse fully charged", $"{percent}%.", ToolTipIcon.Info),
+            BatteryAlert.Full => ("Mouse fully charged", $"{percent}%.", ToolTipIcon.Info),
+            _ => throw new ArgumentOutOfRangeException(nameof(alert), alert, null),
         };
         AppLog.Write($"Notification: {title} ({percent}%)");
-        _notifyIcon.ShowBalloonTip(10_000, title, text, icon);
+        _notifyIcon.ShowBalloonTip(BalloonTimeoutMs, title, text, icon);
     }
 
     private static string BuildTooltip(string? statusLine)
     {
-        var version = Assembly.GetExecutingAssembly()
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
-
-        // Dev builds (prerelease part) keep "+<sha>" shortened to 7 chars; releases show only the semantic version.
-        var plus = version.IndexOf('+');
-        if (plus >= 0)
-            version = version[..plus].Contains('-') ? version[..Math.Min(version.Length, plus + 1 + 7)] : version[..plus];
-
-        var text = $"Logitech Battery {version}";
-        if (statusLine is not null)
-            text = $"{statusLine}\n{text}";
+        var version = DisplayVersion(AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()));
+        var text = statusLine is null ? $"Logitech Battery {version}" : $"{statusLine}\nLogitech Battery {version}";
         // Safety cap: classic NotifyIcon.Text limit is 63 characters (longer throws).
         return text.Length > MaxTooltipLength ? text[..MaxTooltipLength] : text;
+    }
+
+    // Releases show the semantic version only; dev builds (prerelease part) also keep a short commit so builds can be told apart.
+    private static string DisplayVersion(string? informationalVersion)
+    {
+        if (informationalVersion is null)
+            return "unknown";
+
+        var plus = informationalVersion.IndexOf('+');
+        if (plus < 0)
+            return informationalVersion;
+
+        var isDevBuild = informationalVersion[..plus].Contains('-');
+        return isDevBuild
+            ? informationalVersion[..Math.Min(informationalVersion.Length, plus + 1 + ShortShaLength)]
+            : informationalVersion[..plus];
     }
 
     private void ExitApp()
