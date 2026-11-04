@@ -1,0 +1,138 @@
+using HidSharp;
+using LogitechBattery.HidPp;
+
+namespace LogitechBattery;
+
+/// <summary>What a request got back: the response report, or the code of a HID++ 2.0 error, or neither (HID++ 1.0 error or timeout: the device is not reachable).</summary>
+internal readonly record struct HidPpAnswer(byte[]? Response, byte? ErrorCode)
+{
+    public static readonly HidPpAnswer Nothing = new(null, null);
+}
+
+/// <summary>
+/// A HID++ device kept open. Its long and short collections are read on background threads, so every report is seen:
+/// answers on either collection (HID++ 1.0 errors arrive at once on the short one) and unsolicited notifications.
+/// </summary>
+internal sealed class HidPpChannel : IDisposable
+{
+    private const int StreamWriteTimeoutMs = 200;
+
+    private sealed record PendingRequest(byte[] Request, TaskCompletionSource<byte[]> Reply);
+
+    private readonly HidStream _longStream;
+    private readonly HidStream? _shortStream;
+    private readonly Action<HidPpChannel, byte[]> _onReport;
+    private readonly object _exchangeLock = new();
+    private volatile PendingRequest? _pending;
+    private volatile bool _closed;
+
+    public string Key { get; }
+    public int ProductId { get; }
+
+    /// <summary>True once a collection stopped reading (device unplugged) or the channel was disposed.</summary>
+    public bool IsClosed => _closed;
+
+    public bool HasShortCollection => _shortStream is not null;
+
+    private HidPpChannel(HidPpDevice device, HidStream longStream, HidStream? shortStream, Action<HidPpChannel, byte[]> onReport)
+    {
+        Key = device.Key;
+        ProductId = device.LongCollection.ProductID;
+        _longStream = longStream;
+        _shortStream = shortStream;
+        _onReport = onReport;
+    }
+
+    /// <summary>Opens the device and starts reading; null if its long collection cannot be opened.</summary>
+    /// <param name="onReport">Called on a reader thread for every report, answers included.</param>
+    public static HidPpChannel? Open(HidPpDevice device, Action<HidPpChannel, byte[]> onReport)
+    {
+        if (!device.LongCollection.TryOpen(out var longStream))
+            return null;
+        HidStream? shortStream = null;
+        if (device.ShortCollection is { } shortCollection && shortCollection.TryOpen(out var opened))
+            shortStream = opened;
+
+        var channel = new HidPpChannel(device, longStream, shortStream, onReport);
+        channel.StartReading(longStream);
+        if (shortStream is not null)
+            channel.StartReading(shortStream);
+        return channel;
+    }
+
+    /// <summary>Sends a long (HID++ 2.0) or short (HID++ 1.0) request and waits for its response, an error or the timeout.</summary>
+    public HidPpAnswer Exchange(byte[] request, TimeSpan timeout, CancellationToken ct)
+    {
+        lock (_exchangeLock)
+        {
+            var pending = new PendingRequest(request, new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously));
+            _pending = pending;
+            try
+            {
+                var stream = StreamFor(request);
+                stream.WriteTimeout = StreamWriteTimeoutMs;
+                stream.Write(request);
+                return pending.Reply.Task.Wait(timeout, ct) ? ToAnswer(request, pending.Reply.Task.Result) : HidPpAnswer.Nothing;
+            }
+            finally
+            {
+                _pending = null;
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        _closed = true;
+        foreach (var stream in new[] { _longStream, _shortStream })
+            try { stream?.Dispose(); } catch { }
+    }
+
+    private HidStream StreamFor(byte[] request) =>
+        request[0] == HidPpMessage.ShortId
+            ? _shortStream ?? throw new InvalidOperationException("The device has no short HID++ collection.")
+            : _longStream;
+
+    private static HidPpAnswer ToAnswer(byte[] request, byte[] report)
+    {
+        var reply = HidPpMessage.Classify(request, report);
+        return reply.Kind switch
+        {
+            HidPpReplyKind.Response => new HidPpAnswer(report, null),
+            HidPpReplyKind.Error20 => new HidPpAnswer(null, reply.ErrorCode),
+            _ => HidPpAnswer.Nothing,
+        };
+    }
+
+    private void StartReading(HidStream stream) =>
+        new Thread(() => ReadLoop(stream)) { IsBackground = true, Name = "HID++ reader" }.Start();
+
+    private void ReadLoop(HidStream stream)
+    {
+        try
+        {
+            var buffer = new byte[stream.Device.GetMaxInputReportLength()];
+            while (true)
+            {
+                int length;
+                try { length = stream.Read(buffer, 0, buffer.Length); }
+                catch (TimeoutException) { continue; } // no input for a while (HidSharp's ReadTimeout): keep listening
+                if (length > 0)
+                    Deliver(buffer[..length]);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException) { } // unplugged or disposed
+        catch (Exception ex) { AppLog.Write($"HID++ reader stopped: {ex}"); }
+        finally
+        {
+            _closed = true;
+        }
+    }
+
+    private void Deliver(byte[] report)
+    {
+        if (_pending is { } pending && HidPpMessage.Classify(pending.Request, report).Kind != HidPpReplyKind.None)
+            pending.Reply.TrySetResult(report);
+        _onReport(this, report);
+    }
+}

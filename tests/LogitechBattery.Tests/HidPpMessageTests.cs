@@ -34,6 +34,31 @@ public class HidPpMessageTests
             HidPpMessage.BuildRequest(DeviceIndex, FeatureIndex, 0, HidPpMessage.SoftwareId, new byte[17]));
 
     [Fact]
+    public void Set_register_is_a_short_report_with_the_write_sub_id_register_and_value() =>
+        Assert.Equal([0x10, 0xFF, 0x80, 0x00, 0x00, 0x01, 0x00],
+            HidPpMessage.BuildSetRegister(HidPpMessage.ReceiverIndex, register: 0x00, [0x00, 0x01, 0x00]));
+
+    [Fact]
+    public void Report_with_software_id_zero_from_the_device_and_feature_is_an_event() =>
+        Assert.True(HidPpMessage.IsEventFrom(Report(0x11, 0x01, 0x06, 0x00, 0x19, 0x02), deviceIndex: 1, featureIndex: 6));
+
+    [Fact]
+    public void Response_to_our_own_request_is_not_an_event() =>
+        Assert.False(HidPpMessage.IsEventFrom(Report(0x11, 0x01, 0x06, 0x1A, 0x19, 0x02), deviceIndex: 1, featureIndex: 6));
+
+    [Fact]
+    public void Response_to_other_software_is_not_an_event() =>
+        Assert.False(HidPpMessage.IsEventFrom(Report(0x11, 0x01, 0x06, 0x1F, 0x19, 0x02), deviceIndex: 1, featureIndex: 6));
+
+    [Fact]
+    public void Event_from_another_device_index_is_ignored() =>
+        Assert.False(HidPpMessage.IsEventFrom(Report(0x11, 0x02, 0x06, 0x00, 0x19, 0x02), deviceIndex: 1, featureIndex: 6));
+
+    [Fact]
+    public void Event_from_another_feature_index_is_ignored() =>
+        Assert.False(HidPpMessage.IsEventFrom(Report(0x11, 0x01, 0x07, 0x00, 0x19, 0x02), deviceIndex: 1, featureIndex: 6));
+
+    [Fact]
     public void Get_register_is_a_short_report_with_the_read_sub_id_and_the_register_address() =>
         Assert.Equal([0x10, 0xFF, 0x81, 0x00, 0x00, 0x00, 0x00],
             HidPpMessage.BuildGetRegister(HidPpMessage.ReceiverIndex, register: 0x00));

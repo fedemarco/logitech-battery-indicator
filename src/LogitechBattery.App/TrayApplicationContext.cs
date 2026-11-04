@@ -23,9 +23,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private const int MaxTooltipLength = 63;
     private const int ShortShaLength = 7;
 
-    // Reads after a USB change: the cable shows up at once, but the mouse can take a while to
-    // reconnect wirelessly. 1 s, then every 5 s for a minute, every 10 s, 15 s and 30 s for a minute
-    // each; then the regular 60 s poll. Stops as soon as the mouse is connected.
+    // Reads after a change (USB, mouse link, battery event): the cable shows up at once, but the
+    // mouse can take a while to reconnect wirelessly. 1 s, then every 5 s for a minute, every 10 s,
+    // 15 s and 30 s for a minute each; then the regular 60 s poll. Stops as soon as the mouse is connected.
     private static readonly int[] FollowUpDelays =
     [
         1000,
@@ -95,7 +95,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _timer = StartPollTimer(pollIntervalMs);
         _followUp.Tick += OnFollowUpTickAsync;
         if (provider is HidPpBatteryProvider hid)
-            hid.DevicesChanged += OnDevicesChanged;
+            hid.ChangeDetected += OnChangeDetected;
 
         Application.Idle += OnFirstIdle;
     }
@@ -148,7 +148,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     }
 
     // Background thread: hop to the UI thread and restart the follow-up reads.
-    private void OnDevicesChanged() => _ui?.Post(_ =>
+    private void OnChangeDetected() => _ui?.Post(_ =>
     {
         if (_exited)
             return;
@@ -294,7 +294,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _exited = true;
         if (_provider is HidPpBatteryProvider hid)
-            hid.DevicesChanged -= OnDevicesChanged;
+            hid.ChangeDetected -= OnChangeDetected;
         _timer.Stop();
         _timer.Dispose();
         _followUp.Stop();

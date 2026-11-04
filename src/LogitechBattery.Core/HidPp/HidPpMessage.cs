@@ -42,6 +42,8 @@ internal static class HidPpMessage
     public const int PingFunction = 1;
     public const byte PingEcho = 0x5A;
 
+    private const byte SoftwareIdMask = 0x0F;
+    private const byte SetRegisterSubId = 0x80;
     private const byte GetRegisterSubId = 0x81;
 
     private const int DeviceIndexOffset = 1;
@@ -85,6 +87,26 @@ internal static class HidPpMessage
     public static byte[] BuildGetRegister(byte deviceIndex, byte register) =>
         [ShortId, deviceIndex, GetRegisterSubId, register, 0, 0, 0];
 
+    /// <summary>HID++ 1.0 short "set register" request: writes up to three value bytes.</summary>
+    public static byte[] BuildSetRegister(byte deviceIndex, byte register, ReadOnlySpan<byte> value)
+    {
+        var report = new byte[ShortLength];
+        report[0] = ShortId;
+        report[DeviceIndexOffset] = deviceIndex;
+        report[FeatureIndexOffset] = SetRegisterSubId;
+        report[FunctionOffset] = register;
+        value.CopyTo(report.AsSpan(ParamsOffset));
+        return report;
+    }
+
+    /// <summary>True for an unsolicited long report (software id 0) from the given device and feature: a notification, not an answer to anybody's request.</summary>
+    public static bool IsEventFrom(byte[] report, byte deviceIndex, byte featureIndex) =>
+        report.Length >= HeaderLength
+        && report[0] == LongId
+        && report[DeviceIndexOffset] == deviceIndex
+        && report[FeatureIndexOffset] == featureIndex
+        && (report[FunctionOffset] & SoftwareIdMask) == 0;
+
     /// <summary>The parameter bytes of a report (up to the 20-byte long report size).</summary>
     public static byte[] ParamsOf(byte[] report) => report[ParamsOffset..Math.Min(report.Length, LongLength)];
 
@@ -107,7 +129,7 @@ internal static class HidPpMessage
 
     public static string ToHex(byte[] bytes) => BitConverter.ToString(bytes).Replace('-', ' ').ToLowerInvariant();
 
-    private static byte FunctionAndSoftwareId(int function, byte softwareId) => (byte)((function << 4) | (softwareId & 0x0F));
+    private static byte FunctionAndSoftwareId(int function, byte softwareId) => (byte)((function << 4) | (softwareId & SoftwareIdMask));
 
     private static bool IsFromSameDevice(byte[] request, byte[] report) => report[DeviceIndexOffset] == request[DeviceIndexOffset];
 

@@ -2,7 +2,7 @@
 
 Windows tray app showing the battery level of a Logitech PRO X2 SUPERSTRIKE mouse (C# / .NET 10, WinForms, HID++).
 
-The tray icon shows the mouse battery, read over HID++ via the Lightspeed receiver or the USB cable (read every 60 s, and more often for a few minutes after the cable or receiver is plugged in or unplugged). Diagnostics go to `%LOCALAPPDATA%\LogitechBattery\log.txt`.
+The tray icon shows the mouse battery, read over HID++ via the Lightspeed receiver or the USB cable (read every 60 s, and at once when the mouse wakes, sleeps, connects or reports a battery change, or the cable or receiver is plugged in or unplugged). Diagnostics go to `%LOCALAPPDATA%\LogitechBattery\log.txt`.
 
 The app shows a Windows notification when the battery drops to 15 % ("low") and again at 5 % ("critical"), once per discharge, and when it finishes charging ("fully charged").
 
