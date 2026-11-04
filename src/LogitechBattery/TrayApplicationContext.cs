@@ -81,7 +81,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 if (AutoStart.IsEnabled())
                     AutoStart.Disable();
                 else
-                    AutoStart.Enable(); // also rewrites an entry pointing to another path
+                    AutoStart.Enable(); // also rewrites a stale path and clears a Task Manager "disabled"
             };
             menu.Opening += (_, _) => startItem.Checked = AutoStart.IsEnabled();
             menu.Items.Add(startItem);
