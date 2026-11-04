@@ -1,5 +1,7 @@
 namespace LogitechBattery.Battery;
 
+using Reading = (ConnectionState Connection, int? Percent, ChargingState Charging);
+
 public enum MockMode
 {
     Auto,
@@ -15,12 +17,20 @@ public enum MockMode
 /// <summary>Fake battery source for development. Used from the UI thread only.</summary>
 public sealed class MockBatteryProvider : IBatteryProvider
 {
-    // Auto cycle: discharge 100 -> 5 at 1%/s (96 s), asleep 5 s, charge 5 -> 100 at 3%/s, full 10 s.
-    private const double DischargeSeconds = 96;
-    private const double AsleepSeconds = 5;
-    private const double ChargeSeconds = 95.0 / 3;
-    private const double FullSeconds = 10;
-    private const double CycleSeconds = DischargeSeconds + AsleepSeconds + ChargeSeconds + FullSeconds;
+    // Auto cycle: discharge from full to the floor, asleep, charge back up, stay full.
+    private const int FullPercent = 100;
+    private const int FloorPercent = 5;
+    private const int ChargePercentPerSecond = 3;
+
+    // Percent changes by 1 per second; +1 keeps the floor on screen for its own second.
+    internal const double DischargeSeconds = FullPercent - FloorPercent + 1;
+    internal const double AsleepSeconds = 5;
+    internal const double ChargeSeconds = (double)(FullPercent - FloorPercent) / ChargePercentPerSecond;
+    internal const double FullSeconds = 10;
+    internal const double CycleSeconds = DischargeSeconds + AsleepSeconds + ChargeSeconds + FullSeconds;
+
+    // 100 % is reported as Full, so charging never shows it.
+    private const int HighestChargingPercent = FullPercent - 1;
 
     private readonly TimeProvider _time;
     private MockMode _mode = MockMode.Auto;
@@ -45,36 +55,41 @@ public sealed class MockBatteryProvider : IBatteryProvider
 
     public Task<BatteryStatus> ReadAsync(CancellationToken cancellationToken = default)
     {
-        var now = _time.GetUtcNow();
         var (connection, percent, charging) = _mode switch
         {
-            MockMode.Auto => AutoState(),
-            MockMode.Discharging85 => (ConnectionState.Connected, (int?)85, ChargingState.Discharging),
-            MockMode.Discharging25 => (ConnectionState.Connected, 25, ChargingState.Discharging),
-            MockMode.Discharging10 => (ConnectionState.Connected, 10, ChargingState.Discharging),
-            MockMode.Charging60 => (ConnectionState.Connected, 60, ChargingState.Charging),
-            MockMode.Full100 => (ConnectionState.Connected, 100, ChargingState.Full),
-            MockMode.Asleep => (ConnectionState.Asleep, null, ChargingState.Unknown),
-            _ => (ConnectionState.NotFound, null, ChargingState.Unknown),
+            MockMode.Auto => AutoReading(),
+            MockMode.Discharging85 => Connected(85, ChargingState.Discharging),
+            MockMode.Discharging25 => Connected(25, ChargingState.Discharging),
+            MockMode.Discharging10 => Connected(10, ChargingState.Discharging),
+            MockMode.Charging60 => Connected(60, ChargingState.Charging),
+            MockMode.Full100 => Connected(FullPercent, ChargingState.Full),
+            MockMode.Asleep => NoReading(ConnectionState.Asleep),
+            _ => NoReading(ConnectionState.NotFound),
         };
-        return Task.FromResult(new BatteryStatus(connection, percent, charging, now));
+        return Task.FromResult(new BatteryStatus(connection, percent, charging, _time.GetUtcNow()));
     }
 
-    private (ConnectionState, int?, ChargingState) AutoState()
+    private Reading AutoReading()
     {
-        var t = _time.GetElapsedTime(_cycleStart).TotalSeconds % CycleSeconds;
+        const double asleepStart = DischargeSeconds;
+        const double chargeStart = asleepStart + AsleepSeconds;
+        const double fullStart = chargeStart + ChargeSeconds;
 
-        if (t < DischargeSeconds)
-            return (ConnectionState.Connected, 100 - (int)t, ChargingState.Discharging);
-        t -= DischargeSeconds;
+        var secondsIntoCycle = _time.GetElapsedTime(_cycleStart).TotalSeconds % CycleSeconds;
 
-        if (t < AsleepSeconds)
-            return (ConnectionState.Asleep, null, ChargingState.Unknown);
-        t -= AsleepSeconds;
-
-        if (t < ChargeSeconds)
-            return (ConnectionState.Connected, Math.Min(99, 5 + (int)(t * 3)), ChargingState.Charging);
-
-        return (ConnectionState.Connected, 100, ChargingState.Full);
+        if (secondsIntoCycle < asleepStart)
+            return Connected(FullPercent - (int)secondsIntoCycle, ChargingState.Discharging);
+        if (secondsIntoCycle < chargeStart)
+            return NoReading(ConnectionState.Asleep);
+        if (secondsIntoCycle < fullStart)
+        {
+            var charged = (int)((secondsIntoCycle - chargeStart) * ChargePercentPerSecond);
+            return Connected(Math.Min(HighestChargingPercent, FloorPercent + charged), ChargingState.Charging);
+        }
+        return Connected(FullPercent, ChargingState.Full);
     }
+
+    private static Reading Connected(int percent, ChargingState charging) => (ConnectionState.Connected, percent, charging);
+
+    private static Reading NoReading(ConnectionState state) => (state, null, ChargingState.Unknown);
 }

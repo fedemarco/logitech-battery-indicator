@@ -25,15 +25,15 @@ public sealed record BatteryStatus(
                 return "Mouse not found";
         }
 
-        var percent = Percent is { } p ? $"{p}%" : null;
-        return (Charging, percent) switch
+        var percentText = Percent is { } percent ? $"{percent}%" : null;
+        return (Charging, percentText) switch
         {
-            (ChargingState.Charging, not null) => $"Charging · {percent}",
+            (ChargingState.Charging, not null) => $"Charging · {percentText}",
             (ChargingState.Charging, null) => "Charging",
-            (ChargingState.Full, not null) => $"Full · {percent}",
+            (ChargingState.Full, not null) => $"Full · {percentText}",
             (ChargingState.Full, null) => "Full",
-            (ChargingState.Discharging, not null) => $"{percent} · Discharging",
-            (_, not null) => percent,
+            (ChargingState.Discharging, not null) => $"{percentText} · Discharging",
+            (ChargingState.Unknown, not null) => percentText,
             _ => "Battery unknown",
         };
     }

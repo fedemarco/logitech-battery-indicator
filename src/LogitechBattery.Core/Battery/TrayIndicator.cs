@@ -11,8 +11,14 @@ public sealed record TrayIndicator(string Icon)
         if (status is not { Connection: ConnectionState.Connected, Percent: { } percent })
             return Unknown;
 
-        var p = Math.Clamp(percent, 0, 100);
-        var bucket = p >= 80 ? 100 : p >= 60 ? 75 : p >= 40 ? 50 : p >= 20 ? 25 : 0;
+        var bucket = percent switch
+        {
+            >= 80 => 100,
+            >= 60 => 75,
+            >= 40 => 50,
+            >= 20 => 25,
+            _ => 0,
+        };
         var suffix = status.Charging == ChargingState.Charging ? "_chrg" : "";
 
         return new TrayIndicator($"battery{bucket}{suffix}");
