@@ -76,6 +76,7 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
                 {
                     // The device answered with an error: not asleep.
                     AppLog.Write($"getStatus failed with HID++ 2.0 error 0x{code20:X2}");
+                    _target = null; // indexes may be stale (e.g. re-paired): rediscover next time
                     throw new InvalidOperationException($"Battery status request failed (HID++ error 0x{code20:X2}).");
                 }
                 if (response is null)
