@@ -32,7 +32,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     ];
 
     private readonly IBatteryProvider _provider;
-    private readonly LowBatteryAlerts _alerts = new();
+    private readonly BatteryAlerts _alerts = new();
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _menu;
     private readonly System.Windows.Forms.Timer _timer;
@@ -202,11 +202,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void ShowAlert(BatteryAlert alert, int? percent)
     {
-        var (title, text) = alert == BatteryAlert.Critical
-            ? ("Mouse battery critical", $"{percent}% left.")
-            : ("Mouse battery low", $"{percent}% left. Charge it soon.");
+        var (title, text, icon) = alert switch
+        {
+            BatteryAlert.Critical => ("Mouse battery critical", $"{percent}% left.", ToolTipIcon.Warning),
+            BatteryAlert.Low => ("Mouse battery low", $"{percent}% left. Charge it soon.", ToolTipIcon.Warning),
+            _ => ("Mouse fully charged", $"{percent}%.", ToolTipIcon.Info),
+        };
         AppLog.Write($"Notification: {title} ({percent}%)");
-        _notifyIcon.ShowBalloonTip(10_000, title, text, ToolTipIcon.Warning);
+        _notifyIcon.ShowBalloonTip(10_000, title, text, icon);
     }
 
     private static string BuildTooltip(string? statusLine)

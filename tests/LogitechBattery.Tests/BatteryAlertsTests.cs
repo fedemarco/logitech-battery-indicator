@@ -2,12 +2,12 @@ using LogitechBattery.Battery;
 
 namespace LogitechBattery.Tests;
 
-public class LowBatteryAlertsTests
+public class BatteryAlertsTests
 {
     private static BatteryStatus Dis(int p) => new(ConnectionState.Connected, p, ChargingState.Discharging, DateTimeOffset.UnixEpoch);
     private static BatteryStatus Chg(int p, ChargingState s = ChargingState.Charging) => new(ConnectionState.Connected, p, s, DateTimeOffset.UnixEpoch);
 
-    private static BatteryAlert?[] Run(LowBatteryAlerts a, params BatteryStatus[] readings) => readings.Select(a.Update).ToArray();
+    private static BatteryAlert?[] Run(BatteryAlerts a, params BatteryStatus[] readings) => readings.Select(a.Update).ToArray();
 
     [Fact]
     public void Normal_discharge() =>
@@ -52,9 +52,32 @@ public class LowBatteryAlertsTests
 
     [Fact]
     public void Charging_at_3_does_nothing() =>
-        Assert.Null(new LowBatteryAlerts().Update(Chg(3)));
+        Assert.Null(new BatteryAlerts().Update(Chg(3)));
 
     [Fact]
     public void Unknown_charging_state_does_nothing() =>
-        Assert.Null(new LowBatteryAlerts().Update(new(ConnectionState.Connected, 3, ChargingState.Unknown, DateTimeOffset.UnixEpoch)));
+        Assert.Null(new BatteryAlerts().Update(new(ConnectionState.Connected, 3, ChargingState.Unknown, DateTimeOffset.UnixEpoch)));
+
+    [Fact]
+    public void Full_after_charging_once() =>
+        Assert.Equal([null, null, BatteryAlert.Full, null],
+            Run(new(), Chg(80), Chg(99), Chg(100, ChargingState.Full), Chg(100, ChargingState.Full)));
+
+    [Fact]
+    public void Charging_at_100_counts_as_full() =>
+        Assert.Equal([null, BatteryAlert.Full, null], Run(new(), Chg(98), Chg(100), Chg(100)));
+
+    [Fact]
+    public void Full_at_startup_is_silent() =>
+        Assert.Equal([null, null], Run(new(), Chg(100, ChargingState.Full), Chg(100)));
+
+    [Fact]
+    public void Full_again_after_unplug_and_recharge() =>
+        Assert.Equal([null, BatteryAlert.Full, null, null, BatteryAlert.Full],
+            Run(new(), Chg(90), Chg(100, ChargingState.Full), Dis(97), Chg(95), Chg(100, ChargingState.Full)));
+
+    [Fact]
+    public void Full_without_unplug_fires_once() =>
+        Assert.Equal([null, BatteryAlert.Full, null, null],
+            Run(new(), Chg(90), Chg(100, ChargingState.Full), Chg(99), Chg(100, ChargingState.Full)));
 }
