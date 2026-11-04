@@ -34,12 +34,17 @@ public sealed class BatteryAlerts
             _fullNotified = true;
             return BatteryAlert.Full;
         }
-        if (percent < 100 && status.Charging is ChargingState.Charging or ChargingState.Discharging)
-            _fullArmed = true; // seen below 100 %, so a later full is a real completed charge
         if (status.Charging == ChargingState.Charging)
+        {
+            if (percent < 100)
+                _fullArmed = true; // charging from below 100 %: a later full is a completed charge
             return null;
+        }
         if (status.Charging == ChargingState.Discharging)
-            _fullNotified = false; // unplugged: next charge can announce full again
+        {
+            _fullArmed = percent < 100; // unplugged at 100 % and re-plugged: nothing new to announce
+            _fullNotified = false;
+        }
         if (percent >= ResetPercent)
             return null;
         if (status.Charging != ChargingState.Discharging)

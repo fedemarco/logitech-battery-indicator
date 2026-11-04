@@ -88,4 +88,13 @@ public class BatteryAlertsTests
     [Fact]
     public void Replug_at_100_is_silent() =>
         Assert.Equal([null, null], Run(new(), Dis(100), Chg(100)));
+
+    [Fact]
+    public void Replug_at_100_after_full_is_silent() =>
+        Assert.Equal([null, BatteryAlert.Full, null, null], Run(new(), Chg(90), Chg(100, ChargingState.Full), Dis(100), Chg(100)));
+
+    [Fact]
+    public void Full_after_discharge_with_asleep_in_between() =>
+        Assert.Equal([null, null, BatteryAlert.Full],
+            Run(new(), Dis(80), new BatteryStatus(ConnectionState.Asleep, null, ChargingState.Unknown, DateTimeOffset.UnixEpoch), Chg(100, ChargingState.Full)));
 }
