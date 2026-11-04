@@ -5,8 +5,14 @@ namespace LogitechBattery;
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
+        if (args.Contains("--probe"))
+        {
+            HidPpProbe.Run();
+            return;
+        }
+
         using var mutex = new Mutex(true, @"Local\LogitechBattery-SingleInstance", out var isFirstInstance);
         if (!isFirstInstance)
             return;
