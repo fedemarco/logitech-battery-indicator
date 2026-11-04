@@ -19,9 +19,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private const int MaxTooltipLength = 63;
 
-    // Reads after a USB change: the cable shows up at once, but after unplugging it the mouse
-    // needs a few seconds to reconnect wirelessly. Stops as soon as the mouse is connected.
-    private static readonly int[] FollowUpDelays = [1000, 5000, 15000];
+    // Reads after a USB change: the cable shows up at once, but the mouse can take a while to
+    // reconnect wirelessly. 1 s, then every 5 s for a minute, every 10 s, 15 s and 30 s for a minute
+    // each; then the regular 60 s poll. Stops as soon as the mouse is connected.
+    private static readonly int[] FollowUpDelays =
+    [
+        1000,
+        .. Enumerable.Repeat(5000, 12),
+        .. Enumerable.Repeat(10_000, 6),
+        .. Enumerable.Repeat(15_000, 4),
+        .. Enumerable.Repeat(30_000, 2),
+    ];
 
     private readonly IBatteryProvider _provider;
     private readonly NotifyIcon _notifyIcon;
