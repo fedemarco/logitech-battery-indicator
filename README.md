@@ -39,6 +39,16 @@ powershell -ExecutionPolicy Bypass -File update.ps1            # latest dev buil
 powershell -ExecutionPolicy Bypass -File update.ps1 -Release   # latest release
 ```
 
+## Probe (HID++ discovery)
+
+`--probe` sends read-only HID++ queries to attached Logitech devices and writes `%LOCALAPPDATA%\LogitechBattery\probe.txt` (opened in Notepad). It runs even while the tray app is running. Run it once with the mouse on the Lightspeed receiver and once with the USB cable, then send back `probe.txt` (rename the second one, e.g. `probe-cable.txt`, before running again):
+
+```powershell
+& "$env:LOCALAPPDATA\LogitechBattery\LogitechBattery.exe" --probe
+```
+
+(cmd: `"%LOCALAPPDATA%\LogitechBattery\LogitechBattery.exe" --probe`). Wake the mouse (move it) first.
+
 ## Cutting a release
 
 Bump `VersionPrefix` in the csproj if needed, then:
