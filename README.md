@@ -2,7 +2,7 @@
 
 Windows tray app showing the battery level of a Logitech PRO X2 SUPERSTRIKE mouse (C# / .NET 10, WinForms, HID++).
 
-The tray icon shows the mouse battery, read over HID++ via the Lightspeed receiver or the USB cable (refreshed every minute). Diagnostics go to `%LOCALAPPDATA%\LogitechBattery\log.txt`.
+The tray icon shows the mouse battery, read over HID++ via the Lightspeed receiver or the USB cable (read every 60 s, and more often for a few minutes after the cable or receiver is plugged in or unplugged). Diagnostics go to `%LOCALAPPDATA%\LogitechBattery\log.txt`.
 
 `LogitechBattery.exe --mock` starts with a simulated battery and a Simulator menu instead of reading the mouse.
 
@@ -21,8 +21,8 @@ dotnet publish src/LogitechBattery -c Release   # self-contained single-file win
 
 `.github/workflows/build.yml` runs on GitHub (ubuntu):
 
-- Every push to `main`: builds a dev exe (`0.1.0-dev.<run>+<sha>`), uploaded as artifact `LogitechBattery-win-x64` (kept 1 day).
-- Pushing a `vX.Y.Z` tag: builds that version and creates a GitHub Release with `LogitechBattery.exe`. Releases are created only this way.
+- Every push to `main`: builds a dev exe (`<version>-dev.<run>+<sha>`), uploaded as artifact `LogitechBattery-win-x64` (kept 1 day).
+- Pushing a `vX.Y.Z` tag: builds that version and creates a GitHub Release with `LogitechBattery.exe` and `THIRD-PARTY-NOTICES.md`. Releases are created only this way.
 
 ## Install / update on the Windows PC
 
