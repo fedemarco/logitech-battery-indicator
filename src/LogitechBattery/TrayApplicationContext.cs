@@ -38,7 +38,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _followUp = new();
     private int _followUpStep;
     private SynchronizationContext? _ui;
-    private BatteryStatus? _lastStatus;
     private readonly int _iconSize = SystemInformation.SmallIconSize.Width;
     private Icon? _icon;
     private TrayIndicator? _indicator;
@@ -86,19 +85,26 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _followUp.Tick += async (_, _) =>
         {
-            _followUp.Stop();
-            var (ran, status) = await RefreshAsync();
-            if (_exited)
-                return;
-            // Skipped (another read in flight): retry the same step. Failed or not connected: next step.
-            if (ran && status?.Connection == ConnectionState.Connected)
-                return;
-            if (ran)
-                _followUpStep++;
-            if (_followUpStep < FollowUpDelays.Length)
+            try
             {
-                _followUp.Interval = FollowUpDelays[_followUpStep];
-                _followUp.Start();
+                _followUp.Stop();
+                var (ran, status) = await RefreshAsync();
+                if (_exited)
+                    return;
+                // Skipped (another read in flight): retry the same step. Failed or not connected: next step.
+                if (ran && status?.Connection == ConnectionState.Connected)
+                    return;
+                if (ran)
+                    _followUpStep++;
+                if (_followUpStep < FollowUpDelays.Length)
+                {
+                    _followUp.Interval = FollowUpDelays[_followUpStep];
+                    _followUp.Start();
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.Write($"Follow-up read failed: {ex}"); // never escape an async void handler
             }
         };
         if (provider is HidPpBatteryProvider hid)
@@ -138,7 +144,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             status = await _provider.ReadAsync();
             line = status.ToDisplayString();
-            _lastStatus = status;
         }
         catch (Exception)
         {
@@ -153,16 +158,23 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (_exited)
             return (true, status);
 
-        _notifyIcon.Text = BuildTooltip(line);
-
-        var indicator = TrayIndicator.From(status);
-        if (indicator != _indicator)
+        try
         {
-            var old = _icon;
-            _icon = TrayIconRenderer.Render(indicator, _iconSize);
-            _notifyIcon.Icon = _icon;
-            _indicator = indicator;
-            old?.Dispose();
+            _notifyIcon.Text = BuildTooltip(line);
+
+            var indicator = TrayIndicator.From(status);
+            if (indicator != _indicator)
+            {
+                var old = _icon;
+                _icon = TrayIconRenderer.Render(indicator, _iconSize);
+                _notifyIcon.Icon = _icon;
+                _indicator = indicator;
+                old?.Dispose();
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write($"Tray update failed: {ex}"); // keep the previous icon
         }
         return (true, status);
     }
