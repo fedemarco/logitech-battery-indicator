@@ -7,15 +7,21 @@ namespace LogitechBattery;
 /// <summary>Reads the mouse battery over HID++ 2.0 (Unified Battery), via Lightspeed receiver or USB cable.</summary>
 public sealed class HidPpBatteryProvider : IBatteryProvider
 {
-    private const byte SwId = 0x0A;
-    private const int WriteTimeoutMs = 200;
+    private const int StreamReadTimeoutMs = 200;
+    private const int StreamWriteTimeoutMs = 200;
     private static readonly TimeSpan DiscoveryTimeout = TimeSpan.FromMilliseconds(500);
-    private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(1);
 
     // shortcut: single supported model until device selection (multiple devices) is implemented
     private const string SupportedDeviceName = "PRO X2 SUPERSTRIKE";
 
     private sealed record Target(string Path, byte DeviceIndex, byte FeatureIndex);
+
+    /// <summary>What a request got back: the response report, or the code of a HID++ 2.0 error, or neither (error 1.0 / timeout).</summary>
+    private readonly record struct Answer(byte[]? Response, byte? ErrorCode)
+    {
+        public static readonly Answer Nothing = new(null, null);
+    }
 
     private Target? _target;
     private ConnectionState? _lastState;
@@ -24,14 +30,16 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     /// <summary>Raised (on a background thread) when USB HID devices are added or removed, e.g. cable plugged in.</summary>
     public event Action? DevicesChanged;
 
-    public HidPpBatteryProvider() => DeviceList.Local.Changed += (_, _) =>
+    public HidPpBatteryProvider() => DeviceList.Local.Changed += OnUsbDevicesChanged;
+
+    public Task<BatteryStatus> ReadAsync(CancellationToken cancellationToken = default) => Task.Run(() => Read(cancellationToken), cancellationToken);
+
+    private void OnUsbDevicesChanged(object? sender, DeviceListChangedEventArgs e)
     {
         AppLog.Write("USB devices changed");
         _rediscover = true; // the best route may have changed (cable preferred over receiver)
         DevicesChanged?.Invoke();
-    };
-
-    public Task<BatteryStatus> ReadAsync(CancellationToken cancellationToken = default) => Task.Run(() => Read(cancellationToken), cancellationToken);
+    }
 
     private BatteryStatus Read(CancellationToken ct)
     {
@@ -52,39 +60,44 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         if (_rediscover)
         {
             _rediscover = false;
-            _target = null;
+            ForgetTarget();
         }
+
         _target ??= Discover(ct);
         if (_target is not { } target)
-            // A receiver without an answering mouse means the mouse sleeps or is off.
-            return Result(HidPpDevices.Find().Count > 0 ? ConnectionState.Asleep : ConnectionState.NotFound, now);
+            return NoReading(MissingTargetState(), now);
 
         var device = DeviceList.Local.GetHidDevices(HidPpDevices.LogitechVid).FirstOrDefault(d => d.DevicePath == target.Path);
         if (device is null || !device.TryOpen(out var stream))
             return Lost(target, now, retry, ct);
 
+        return ReadStatus(stream, target, now, retry, ct);
+    }
+
+    private BatteryStatus ReadStatus(HidStream stream, Target target, DateTimeOffset now, bool retry, CancellationToken ct)
+    {
         try
         {
             using (stream)
             {
-                stream.ReadTimeout = 200;
-                stream.WriteTimeout = WriteTimeoutMs;
-                var request = HidPpMessage.BuildRequest(target.DeviceIndex, target.FeatureIndex, UnifiedBattery.GetStatusFunction, SwId);
-                byte? error = null;
-                var response = Exchange(stream, request, ReadTimeout, ct, code => error = code);
-                if (error is { } code20)
+                ConfigureTimeouts(stream);
+                var request = HidPpMessage.BuildRequest(target.DeviceIndex, target.FeatureIndex, UnifiedBattery.GetStatusFunction, HidPpMessage.SoftwareId);
+                var answer = Exchange(stream, request, ResponseTimeout, ct);
+
+                if (answer.ErrorCode is { } errorCode)
                 {
                     // The device answered with an error: not asleep.
-                    AppLog.Write($"getStatus failed with HID++ 2.0 error 0x{code20:X2}");
-                    _target = null; // indexes may be stale (e.g. re-paired): rediscover next time
-                    throw new InvalidOperationException($"Battery status request failed (HID++ error 0x{code20:X2}).");
+                    AppLog.Write($"getStatus failed with HID++ 2.0 error 0x{errorCode:X2}");
+                    ForgetTarget(); // indexes may be stale (e.g. re-paired): rediscover next time
+                    throw new InvalidOperationException($"Battery status request failed (HID++ error 0x{errorCode:X2}).");
                 }
-                if (response is null)
+                if (answer.Response is not { } response)
                 {
-                    _target = null; // rediscover next time (the mouse may be paired to another slot)
-                    return Result(ConnectionState.Asleep, now);
+                    ForgetTarget(); // rediscover next time (the mouse may be paired to another slot)
+                    return NoReading(ConnectionState.Asleep, now);
                 }
-                var status = UnifiedBattery.ParseStatus(response.AsSpan(4), now);
+
+                var status = UnifiedBattery.ParseStatus(HidPpMessage.ParamsOf(response), now);
                 LogState(ConnectionState.Connected);
                 return status;
             }
@@ -99,11 +112,17 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     private BatteryStatus Lost(Target target, DateTimeOffset now, bool retry, CancellationToken ct)
     {
         AppLog.Write($"Device lost: {target.Path}");
-        _target = null;
-        return retry ? ReadCore(retry: false, ct) : Result(ConnectionState.NotFound, now);
+        ForgetTarget();
+        return retry ? ReadCore(retry: false, ct) : NoReading(ConnectionState.NotFound, now);
     }
 
-    private BatteryStatus Result(ConnectionState state, DateTimeOffset now)
+    private void ForgetTarget() => _target = null;
+
+    // A receiver without an answering mouse means the mouse sleeps or is off.
+    private static ConnectionState MissingTargetState() =>
+        HidPpDevices.Find().Count > 0 ? ConnectionState.Asleep : ConnectionState.NotFound;
+
+    private BatteryStatus NoReading(ConnectionState state, DateTimeOffset now)
     {
         LogState(state);
         return new BatteryStatus(state, null, ChargingState.Unknown, now);
@@ -117,79 +136,100 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         AppLog.Write($"Connection: {state}");
     }
 
-    /// <summary>Pass 1: devIdx 0xFF (cable); pass 2: devIdx 1..6 (receiver slots). First HID++ 2.0 device with Unified Battery wins.</summary>
+    /// <summary>Pass 1: the cable's device index; pass 2: the receiver slots. First HID++ 2.0 device with Unified Battery wins.</summary>
     private static Target? Discover(CancellationToken ct)
     {
         var devices = HidPpDevices.Find();
-        var indexes = new[] { new byte[] { 0xFF }, new byte[] { 1, 2, 3, 4, 5, 6 } };
-        foreach (var pass in indexes)
+        foreach (var deviceIndexes in new[] { HidPpMessage.CableDeviceIndexes, HidPpMessage.ReceiverDeviceIndexes })
         {
             foreach (var device in devices)
             {
-                if (!device.Long.TryOpen(out var stream))
-                    continue;
-                using (stream)
+                if (FindTarget(device, deviceIndexes, ct) is { } target)
+                    return target;
+            }
+        }
+        return null;
+    }
+
+    private static Target? FindTarget(HidPpDevice device, byte[] deviceIndexes, CancellationToken ct)
+    {
+        if (!device.LongCollection.TryOpen(out var stream))
+            return null;
+
+        using (stream)
+        {
+            ConfigureTimeouts(stream);
+            foreach (var deviceIndex in deviceIndexes)
+            {
+                try
                 {
-                    stream.ReadTimeout = 200;
-                    stream.WriteTimeout = WriteTimeoutMs;
-                    foreach (var index in pass)
+                    if (FindBatteryFeatureIndex(stream, deviceIndex, ct) is not { } featureIndex)
+                        continue;
+
+                    var name = ReadName(stream, deviceIndex, ct);
+                    if (name != SupportedDeviceName)
                     {
-                        try
-                        {
-                            if (TryFindFeature(stream, index, ct) is { } feature)
-                            {
-                                var name = ReadName(stream, index, ct);
-                                if (name != SupportedDeviceName)
-                                {
-                                    AppLog.Write($"Skipping device: PID {device.Long.ProductID:X4}, devIdx {index:X2}, name {(name is null ? "unreadable" : $"\"{name}\"")}");
-                                    continue;
-                                }
-                                AppLog.Write($"Device found: PID {device.Long.ProductID:X4}, devIdx {index:X2}, battery feature index {feature:X2}");
-                                return new Target(device.Long.DevicePath, index, feature);
-                            }
-                        }
-                        catch (Exception ex) when (ex is IOException or TimeoutException) { break; }
+                        AppLog.Write($"Skipping device: PID {device.LongCollection.ProductID:X4}, devIdx {deviceIndex:X2}, name {(name is null ? "unreadable" : $"\"{name}\"")}");
+                        continue;
                     }
+                    AppLog.Write($"Device found: PID {device.LongCollection.ProductID:X4}, devIdx {deviceIndex:X2}, battery feature index {featureIndex:X2}");
+                    return new Target(device.LongCollection.DevicePath, deviceIndex, featureIndex);
+                }
+                catch (Exception ex) when (ex is IOException or TimeoutException)
+                {
+                    break; // the stream itself failed (e.g. unplugged): the remaining indexes would fail the same way
                 }
             }
         }
         return null;
     }
 
-    private static byte? TryFindFeature(HidStream stream, byte index, CancellationToken ct)
+    private static void ConfigureTimeouts(HidStream stream)
     {
-        // Root feature (index 0): fn1 getProtocolVersion as ping, fn0 getFeature.
-        if (Exchange(stream, HidPpMessage.BuildRequest(index, 0, 1, SwId, 0, 0, 0x5A), DiscoveryTimeout, ct) is null)
+        stream.ReadTimeout = StreamReadTimeoutMs;
+        stream.WriteTimeout = StreamWriteTimeoutMs;
+    }
+
+    private static byte? FindBatteryFeatureIndex(HidStream stream, byte deviceIndex, CancellationToken ct)
+    {
+        if (RequestDuringDiscovery(stream, HidPpMessage.BuildPing(deviceIndex), ct) is null)
             return null;
-        var r = Exchange(stream, HidPpMessage.BuildRequest(index, 0, 0, SwId, UnifiedBattery.FeatureId >> 8, UnifiedBattery.FeatureId & 0xFF), DiscoveryTimeout, ct);
-        return r is { } && r[4] != 0 ? r[4] : null;
+        return FindFeatureIndex(stream, deviceIndex, UnifiedBattery.FeatureId, ct);
+    }
+
+    /// <summary>Asks the root feature for the index of <paramref name="featureId"/>; null if unsupported or unanswered.</summary>
+    private static byte? FindFeatureIndex(HidStream stream, byte deviceIndex, ushort featureId, CancellationToken ct)
+    {
+        var response = RequestDuringDiscovery(stream, HidPpMessage.BuildGetFeature(deviceIndex, featureId), ct);
+        var featureIndex = response is null ? (byte)0 : HidPpMessage.ParamsOf(response)[0];
+        return featureIndex == 0 ? null : featureIndex;
     }
 
     /// <summary>Reads the DeviceName feature (0x0005); null if unsupported or unreadable.</summary>
-    private static string? ReadName(HidStream stream, byte index, CancellationToken ct)
+    private static string? ReadName(HidStream stream, byte deviceIndex, CancellationToken ct)
     {
-        var r = Exchange(stream, HidPpMessage.BuildRequest(index, 0, 0, SwId, DeviceName.FeatureId >> 8, DeviceName.FeatureId & 0xFF), DiscoveryTimeout, ct);
-        if (r is not { Length: > 4 } || r[4] == 0)
+        if (FindFeatureIndex(stream, deviceIndex, DeviceName.FeatureId, ct) is not { } featureIndex)
             return null;
-        var feature = r[4];
-        if (Exchange(stream, HidPpMessage.BuildRequest(index, feature, DeviceName.GetCountFunction, SwId), DiscoveryTimeout, ct) is not { Length: > 4 } count || count[4] == 0)
+
+        var countResponse = RequestDuringDiscovery(stream, HidPpMessage.BuildRequest(deviceIndex, featureIndex, DeviceName.GetCountFunction, HidPpMessage.SoftwareId), ct);
+        if (countResponse is null || HidPpMessage.ParamsOf(countResponse)[0] == 0)
             return null;
-        var length = Math.Min((int)count[4], 64);
-        var chunks = new List<byte[]>();
-        for (var pos = 0; pos < length; pos += 16)
+
+        var length = DeviceName.LimitLength(HidPpMessage.ParamsOf(countResponse)[0]);
+        var chunks = DeviceName.ReadChunks(length, position =>
         {
-            if (Exchange(stream, HidPpMessage.BuildRequest(index, feature, DeviceName.GetNameFunction, SwId, (byte)pos), DiscoveryTimeout, ct) is not { Length: > 4 } chunk)
-                return null;
-            chunks.Add(chunk[4..Math.Min(chunk.Length, 20)]);
-        }
-        return DeviceName.Assemble(length, chunks);
+            var request = HidPpMessage.BuildRequest(deviceIndex, featureIndex, DeviceName.GetNameFunction, HidPpMessage.SoftwareId, position);
+            return RequestDuringDiscovery(stream, request, ct) is { } chunk ? HidPpMessage.ParamsOf(chunk) : null;
+        });
+        return DeviceName.IsComplete(length, chunks) ? DeviceName.Assemble(length, chunks) : null;
     }
 
-    /// <summary>
-    /// Sends <paramref name="request"/> and returns the matching response, or null on error/timeout.
-    /// shortcut: only the long collection is read, so HID++ 1.0 errors (short reports on another collection) show up as a timeout; revisit if the sleeping-mouse behavior needs distinguishing.
-    /// </summary>
-    private static byte[]? Exchange(HidStream stream, byte[] request, TimeSpan timeout, CancellationToken ct, Action<byte>? onError20 = null)
+    private static byte[]? RequestDuringDiscovery(HidStream stream, byte[] request, CancellationToken ct) =>
+        Exchange(stream, request, DiscoveryTimeout, ct).Response;
+
+    /// <summary>Sends <paramref name="request"/> and waits for the matching response, a HID++ 2.0 error or the timeout.</summary>
+    // shortcut: only the long collection is read, so HID++ 1.0 errors (short reports on another collection) show up as a timeout; revisit if the sleeping-mouse behavior needs distinguishing.
+    private static Answer Exchange(HidStream stream, byte[] request, TimeSpan timeout, CancellationToken ct)
     {
         stream.Write(request);
         var buffer = new byte[stream.Device.GetMaxInputReportLength()];
@@ -197,22 +237,23 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         while (DateTime.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();
-            int n;
-            try { n = stream.Read(buffer, 0, buffer.Length); }
+            int length;
+            try { length = stream.Read(buffer, 0, buffer.Length); }
             catch (TimeoutException) { continue; }
-            var report = buffer[..n];
+            var report = buffer[..length];
             var reply = HidPpMessage.Classify(request, report);
             switch (reply.Kind)
             {
                 case HidPpReplyKind.Response:
-                    return report;
+                    return new Answer(report, null);
                 case HidPpReplyKind.Error20:
-                    onError20?.Invoke(reply.ErrorCode);
-                    return null;
+                    return new Answer(null, reply.ErrorCode);
                 case HidPpReplyKind.Error10:
-                    return null;
+                    return Answer.Nothing;
+                case HidPpReplyKind.None:
+                    break; // notification or answer to another request: keep waiting
             }
         }
-        return null;
+        return Answer.Nothing;
     }
 }

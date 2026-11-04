@@ -12,8 +12,17 @@ namespace LogitechBattery;
 /// </summary>
 public sealed class HidPpProbe
 {
-    private const byte SwId = 0x0A;
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(1);
+    private const string ReportFileName = "probe.txt";
+    private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(1);
+
+    // Other battery features, probed only to find out what a device offers.
+    private const ushort BatteryStatusFeatureId = 0x1000;
+    private const int BatteryStatusGetStatusFunction = 0;
+    private const ushort BatteryVoltageFeatureId = 0x1001;
+    private const int BatteryVoltageGetVoltageFunction = 0;
+
+    /// <summary>A device index on the writer stream, plus the reports every collection of the device delivers.</summary>
+    private readonly record struct DeviceLink(HidStream Writer, BlockingCollection<byte[]> Reports, byte DeviceIndex);
 
     private readonly StringBuilder _log = new();
 
@@ -24,9 +33,8 @@ public sealed class HidPpProbe
         try { probe.Execute(); }
         catch (Exception ex) { probe.Log($"FATAL: {ex}"); }
 
-        var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LogitechBattery");
-        Directory.CreateDirectory(dir);
-        var file = Path.Combine(dir, "probe.txt");
+        Directory.CreateDirectory(AppPaths.DataDirectory);
+        var file = Path.Combine(AppPaths.DataDirectory, ReportFileName);
         File.WriteAllText(file, probe._log.ToString());
         return file;
     }
@@ -35,79 +43,80 @@ public sealed class HidPpProbe
 
     private void Execute()
     {
-        var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-        Log($"LogitechBattery probe {version}");
+        Log($"LogitechBattery probe {AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly())}");
         Log($"{DateTimeOffset.Now:O}  {Environment.OSVersion}");
         Log("");
 
         var devices = DeviceList.Local.GetHidDevices(HidPpDevices.LogitechVid).ToList();
         Log($"== HID collections (VID 046D): {devices.Count}");
-        var infos = devices.Select(DescribeCollection).ToList();
+        var collections = devices.Select(DescribeCollection).ToList();
 
-        foreach (var device in HidPpDevices.Group(infos))
+        foreach (var device in HidPpDevices.Group(collections))
         {
             Log("");
             Log($"== Physical device {device.Key}");
-            try { ProbeDevice(device.Collections, device.Long); }
+            try { ProbeDevice(device.Collections, device.LongCollection); }
             catch (Exception ex) { Log($"ERROR probing device: {ex.Message}"); }
         }
     }
 
-    /// <summary>Logs one collection; returns page&lt;&lt;16|usage of its first top-level usage (0 if unknown) and its max output length.</summary>
-    private HidCollection DescribeCollection(HidDevice d)
+    /// <summary>Logs one collection and returns it with its first usage and max output length.</summary>
+    private HidCollection DescribeCollection(HidDevice device)
     {
-        string name;
-        try { name = d.GetProductName(); } catch (Exception ex) { name = $"<error: {ex.Message}>"; }
-        string usages;
-        uint first = 0;
-        try
-        {
-            var all = d.GetReportDescriptor().DeviceItems.SelectMany(i => i.Usages.GetAllValues()).ToList();
-            usages = string.Join(", ", all.Select(u => $"{u >> 16:X4}:{u & 0xFFFF:X4}"));
-            first = all.FirstOrDefault();
-        }
-        catch (Exception ex) { usages = $"<error: {ex.Message}>"; }
-        int inLen = 0, outLen = 0;
-        try { inLen = d.GetMaxInputReportLength(); outLen = d.GetMaxOutputReportLength(); } catch { }
-        Log($"PID {d.ProductID:X4}  \"{name}\"  usage(page:usage) {usages}  maxIn {inLen}  maxOut {outLen}");
-        Log($"    {d.DevicePath}");
-        return new HidCollection(d, first, outLen);
+        var collection = HidPpDevices.Describe(device);
+        var maxInputLength = 0;
+        try { maxInputLength = device.GetMaxInputReportLength(); } catch { }
+        Log($"PID {device.ProductID:X4}  \"{ProductNameOrError(device)}\"  usage(page:usage) {UsagesOrError(device)}  maxIn {maxInputLength}  maxOut {collection.OutputReportLength}");
+        Log($"    {device.DevicePath}");
+        return collection;
     }
 
-    private void ProbeDevice(List<HidDevice> collections, HidDevice longDevice)
+    private static string ProductNameOrError(HidDevice device)
+    {
+        try { return device.GetProductName(); }
+        catch (Exception ex) { return $"<error: {ex.Message}>"; }
+    }
+
+    private static string UsagesOrError(HidDevice device)
+    {
+        try { return string.Join(", ", HidPpDevices.ReadUsages(device).Select(u => $"{HidPpDevices.UsagePage(u):X4}:{u & 0xFFFF:X4}")); }
+        catch (Exception ex) { return $"<error: {ex.Message}>"; }
+    }
+
+    private void ProbeDevice(List<HidDevice> collections, HidDevice longCollection)
     {
         var streams = new List<HidStream>();
         var reports = new BlockingCollection<byte[]>();
         try
         {
             HidStream? writer = null;
-            foreach (var c in collections)
+            foreach (var collection in collections)
             {
-                if (!c.TryOpen(out var s))
+                if (!collection.TryOpen(out var stream))
                 {
-                    Log($"cannot open {c.DevicePath}");
+                    Log($"cannot open {collection.DevicePath}");
                     continue;
                 }
-                streams.Add(s);
-                if (c == longDevice) writer = s;
-                var t = new Thread(() => ReadLoop(s, reports)) { IsBackground = true };
-                t.Start();
+                streams.Add(stream);
+                if (collection == longCollection)
+                    writer = stream;
+                new Thread(() => ReadLoop(stream, reports)) { IsBackground = true }.Start();
             }
             if (writer is null)
                 return;
 
-            foreach (byte dev in new byte[] { 0xFF, 1, 2, 3, 4, 5, 6 })
+            foreach (var deviceIndex in HidPpMessage.CableDeviceIndexes.Concat(HidPpMessage.ReceiverDeviceIndexes))
             {
                 Log("");
-                Log($"-- devIdx {dev:X2}");
-                try { ProbeIndex(writer, reports, dev); }
-                catch (Exception ex) { Log($"ERROR devIdx {dev:X2}: {ex.Message}"); }
+                Log($"-- devIdx {deviceIndex:X2}");
+                try { ProbeIndex(new DeviceLink(writer, reports, deviceIndex)); }
+                catch (Exception ex) { Log($"ERROR devIdx {deviceIndex:X2}: {ex.Message}"); }
             }
         }
         finally
         {
-            foreach (var s in streams)
-                try { s.Dispose(); } catch { }
+            foreach (var stream in streams)
+                try { stream.Dispose(); } catch { }
         }
     }
 
@@ -115,13 +124,14 @@ public sealed class HidPpProbe
     {
         try
         {
-            var buf = new byte[stream.Device.GetMaxInputReportLength()];
+            var buffer = new byte[stream.Device.GetMaxInputReportLength()];
             while (true)
             {
                 try
                 {
-                    var n = stream.Read(buf, 0, buf.Length);
-                    if (n > 0) sink.Add(buf[..n]);
+                    var length = stream.Read(buffer, 0, buffer.Length);
+                    if (length > 0)
+                        sink.Add(buffer[..length]);
                 }
                 catch (TimeoutException) { } // no input for a while (HidSharp's ReadTimeout): keep listening
             }
@@ -129,73 +139,104 @@ public sealed class HidPpProbe
         catch { /* stream disposed */ }
     }
 
-    private void ProbeIndex(HidStream writer, BlockingCollection<byte[]> reports, byte dev)
+    private void ProbeIndex(DeviceLink link)
     {
-        var ping = Request(writer, reports, dev, 0x00, 1, 0, 0, 0x5A);
+        var ping = Request(link, HidPpMessage.BuildPing(link.DeviceIndex));
         if (ping is null)
         {
             Log("  => no HID++ 2.0 answer");
             return;
         }
-        Log($"  protocol {ping[4]}.{ping[5]} (ping echo {(ping[6] == 0x5A ? "ok" : "mismatch")})");
+        var pingParams = HidPpMessage.ParamsOf(ping);
+        Log($"  protocol {pingParams[0]}.{pingParams[1]} (ping echo {(pingParams[2] == HidPpMessage.PingEcho ? "ok" : "mismatch")})");
 
-        byte? Feature(ushort id)
+        if (DescribeFeature(link, DeviceName.FeatureId) is { } nameFeatureIndex)
+            ReportDeviceName(link, nameFeatureIndex);
+        if (DescribeFeature(link, UnifiedBattery.FeatureId) is { } unifiedFeatureIndex)
+            ReportUnifiedBattery(link, unifiedFeatureIndex);
+        if (DescribeFeature(link, BatteryStatusFeatureId) is { } statusFeatureIndex
+            && Call(link, statusFeatureIndex, BatteryStatusGetStatusFunction) is { } status)
         {
-            var r = Request(writer, reports, dev, 0x00, 0, (byte)(id >> 8), (byte)id);
-            var idx = r?[4];
-            Log(r is null ? $"  feature {id:X4}: no answer" : idx == 0 ? $"  feature {id:X4}: not supported" : $"  feature {id:X4}: index {idx:X2} type {r[5]:X2} version {r[6]}");
-            return idx is null or 0 ? null : idx;
+            var p = HidPpMessage.ParamsOf(status);
+            Log($"  BatteryStatus: {p[0]}% next {p[1]}% status {p[2]}");
         }
-
-        if (Feature(0x0005) is { } nameIdx)
+        if (DescribeFeature(link, BatteryVoltageFeatureId) is { } voltageFeatureIndex
+            && Call(link, voltageFeatureIndex, BatteryVoltageGetVoltageFunction) is { } voltage)
         {
-            var count = Request(writer, reports, dev, nameIdx, 0)?[4];
-            if (count is > 0)
-            {
-                var sb = new StringBuilder();
-                for (int pos = 0; pos < Math.Min((int)count, 64) && Request(writer, reports, dev, nameIdx, 1, (byte)pos) is { } r; pos += 16)
-                    sb.Append(Encoding.ASCII.GetString(r, 4, Math.Min(16, r.Length - 4)).TrimEnd('\0'));
-                Log($"  device name: \"{sb}\"");
-            }
+            var p = HidPpMessage.ParamsOf(voltage);
+            Log($"  BatteryVoltage: {(p[0] << 8) | p[1]} mV flags {p[2]:X2}");
         }
-        if (Feature(0x1004) is { } uni)
-        {
-            if (Request(writer, reports, dev, uni, 0) is { } c)
-                Log($"  UnifiedBattery capabilities params: {HidPpMessage.ToHex(c[4..10])}");
-            if (Request(writer, reports, dev, uni, 1) is { } s)
-                Log($"  UnifiedBattery status: {s[4]}% levelFlags {s[5]:X2} charging {s[6]} externalPower {s[7]}");
-        }
-        if (Feature(0x1000) is { } bs && Request(writer, reports, dev, bs, 0) is { } b)
-            Log($"  BatteryStatus: {b[4]}% next {b[5]}% status {b[6]}");
-        if (Feature(0x1001) is { } bv && Request(writer, reports, dev, bv, 0) is { } v)
-            Log($"  BatteryVoltage: {(v[4] << 8) | v[5]} mV flags {v[6]:X2}");
     }
 
-    /// <summary>Sends a read-only request; returns the matching response report or null (error/timeout, logged).</summary>
-    private byte[]? Request(HidStream writer, BlockingCollection<byte[]> reports, byte dev, byte feature, int fn, params byte[] args)
+    /// <summary>Logs whether the device supports <paramref name="featureId"/>; returns its feature index if so.</summary>
+    private byte? DescribeFeature(DeviceLink link, ushort featureId)
     {
-        var req = HidPpMessage.BuildRequest(dev, feature, fn, SwId, args);
-        while (reports.TryTake(out _)) { } // drop stale reports from earlier requests
-        Log($"  → {HidPpMessage.ToHex(req)}");
-        writer.Write(req);
-
-        var deadline = DateTime.UtcNow + Timeout;
-        while (reports.TryTake(out var rep, Math.Max(0, (int)(deadline - DateTime.UtcNow).TotalMilliseconds)))
+        var response = Request(link, HidPpMessage.BuildGetFeature(link.DeviceIndex, featureId));
+        if (response is null)
         {
-            var reply = HidPpMessage.Classify(req, rep);
+            Log($"  feature {featureId:X4}: no answer");
+            return null;
+        }
+        var p = HidPpMessage.ParamsOf(response);
+        if (p[0] == 0)
+        {
+            Log($"  feature {featureId:X4}: not supported");
+            return null;
+        }
+        Log($"  feature {featureId:X4}: index {p[0]:X2} type {p[1]:X2} version {p[2]}");
+        return p[0];
+    }
+
+    private void ReportDeviceName(DeviceLink link, byte featureIndex)
+    {
+        var count = Call(link, featureIndex, DeviceName.GetCountFunction) is { } response ? HidPpMessage.ParamsOf(response)[0] : 0;
+        if (count == 0)
+            return;
+
+        var chunks = DeviceName.ReadChunks(DeviceName.LimitLength(count), position =>
+            Call(link, featureIndex, DeviceName.GetNameFunction, position) is { } chunk ? HidPpMessage.ParamsOf(chunk) : null);
+        var name = string.Concat(chunks.Select(chunk => Encoding.ASCII.GetString(chunk).TrimEnd('\0')));
+        Log($"  device name: \"{name}\"");
+    }
+
+    private void ReportUnifiedBattery(DeviceLink link, byte featureIndex)
+    {
+        if (Call(link, featureIndex, UnifiedBattery.GetCapabilitiesFunction) is { } capabilities)
+            Log($"  UnifiedBattery capabilities params: {HidPpMessage.ToHex(HidPpMessage.ParamsOf(capabilities)[..6])}");
+        if (Call(link, featureIndex, UnifiedBattery.GetStatusFunction) is { } status)
+        {
+            var p = HidPpMessage.ParamsOf(status);
+            Log($"  UnifiedBattery status: {p[0]}% levelFlags {p[1]:X2} charging {p[2]} externalPower {p[3]}");
+        }
+    }
+
+    private byte[]? Call(DeviceLink link, byte featureIndex, int function, params byte[] parameters) =>
+        Request(link, HidPpMessage.BuildRequest(link.DeviceIndex, featureIndex, function, HidPpMessage.SoftwareId, parameters));
+
+    /// <summary>Sends a read-only request; returns the matching response report or null (error/timeout, logged).</summary>
+    private byte[]? Request(DeviceLink link, byte[] request)
+    {
+        while (link.Reports.TryTake(out _)) { } // drop stale reports from earlier requests
+        Log($"  → {HidPpMessage.ToHex(request)}");
+        link.Writer.Write(request);
+
+        var deadline = DateTime.UtcNow + ResponseTimeout;
+        while (link.Reports.TryTake(out var report, Math.Max(0, (int)(deadline - DateTime.UtcNow).TotalMilliseconds)))
+        {
+            var reply = HidPpMessage.Classify(request, report);
             switch (reply.Kind)
             {
                 case HidPpReplyKind.Response:
-                    Log($"  ← {HidPpMessage.ToHex(rep)}");
-                    return rep;
+                    Log($"  ← {HidPpMessage.ToHex(report)}");
+                    return report;
                 case HidPpReplyKind.Error20:
-                    Log($"  ← {HidPpMessage.ToHex(rep)}   HID++ 2.0 error 0x{reply.ErrorCode:X2}");
+                    Log($"  ← {HidPpMessage.ToHex(report)}   HID++ 2.0 error 0x{reply.ErrorCode:X2}");
                     return null;
                 case HidPpReplyKind.Error10:
-                    Log($"  ← {HidPpMessage.ToHex(rep)}   HID++ 1.0 error 0x{reply.ErrorCode:X2}");
+                    Log($"  ← {HidPpMessage.ToHex(report)}   HID++ 1.0 error 0x{reply.ErrorCode:X2}");
                     return null;
-                default:
-                    Log($"  ← {HidPpMessage.ToHex(rep)}   (unsolicited, skipped)");
+                case HidPpReplyKind.None:
+                    Log($"  ← {HidPpMessage.ToHex(report)}   (unsolicited, skipped)");
                     break;
             }
         }
