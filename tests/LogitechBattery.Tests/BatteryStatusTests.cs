@@ -7,11 +7,11 @@ public class BatteryStatusTests
     private static BatteryStatus Make(ConnectionState c, int? p, ChargingState ch) => new(c, p, ch, DateTimeOffset.UnixEpoch);
 
     [Theory]
-    [InlineData(0, BatteryLevel.Critical)]
-    [InlineData(14, BatteryLevel.Critical)]
+    [InlineData(4, BatteryLevel.Critical)]
+    [InlineData(5, BatteryLevel.Critical)]
+    [InlineData(6, BatteryLevel.Low)]
     [InlineData(15, BatteryLevel.Low)]
-    [InlineData(49, BatteryLevel.Low)]
-    [InlineData(50, BatteryLevel.Good)]
+    [InlineData(16, BatteryLevel.Good)]
     [InlineData(100, BatteryLevel.Good)]
     public void Level_boundaries(int percent, BatteryLevel expected) =>
         Assert.Equal(expected, Make(ConnectionState.Connected, percent, ChargingState.Discharging).Level);

@@ -9,9 +9,9 @@ public sealed record BatteryStatus(
     public BatteryLevel? Level => Percent switch
     {
         null => null,
-        >= BatteryThresholds.Good => BatteryLevel.Good,
-        >= BatteryThresholds.Low => BatteryLevel.Low,
-        _ => BatteryLevel.Critical,
+        <= BatteryThresholds.Critical => BatteryLevel.Critical,
+        <= BatteryThresholds.Low => BatteryLevel.Low,
+        _ => BatteryLevel.Good,
     };
 
     /// <summary>Short text such as "85% · Discharging", "Charging · 60%", "Mouse asleep".</summary>
