@@ -6,20 +6,31 @@ namespace LogitechBattery.HidPp;
 internal static class UnifiedBattery
 {
     public const ushort FeatureId = 0x1004;
+    public const int GetCapabilitiesFunction = 0;
     public const int GetStatusFunction = 1;
 
+    private const int StateOfChargeIndex = 0;
+    private const int ChargingStatusIndex = 2;
+    private const int StatusLength = 4;
+
+    private const byte Discharging = 0;
+    private const byte Charging = 1;
+    private const byte ChargingSlow = 2;
+    private const byte ChargeComplete = 3;
+
     /// <summary>Parses getStatus params: [stateOfCharge%, levelFlags, chargingStatus, externalPower]. Throws FormatException if shorter.</summary>
-    public static BatteryStatus ParseStatus(ReadOnlySpan<byte> p, DateTimeOffset readAt)
+    public static BatteryStatus ParseStatus(ReadOnlySpan<byte> parameters, DateTimeOffset readAt)
     {
-        if (p.Length < 4)
-            throw new FormatException($"Unified Battery status needs 4 bytes, got {p.Length}.");
-        var charging = p[2] switch
+        if (parameters.Length < StatusLength)
+            throw new FormatException($"Unified Battery status needs {StatusLength} bytes, got {parameters.Length}.");
+        var charging = parameters[ChargingStatusIndex] switch
         {
-            0 => ChargingState.Discharging,
-            1 or 2 => ChargingState.Charging,
-            3 => ChargingState.Full,
+            Discharging => ChargingState.Discharging,
+            Charging or ChargingSlow => ChargingState.Charging,
+            ChargeComplete => ChargingState.Full,
             _ => ChargingState.Unknown,
         };
-        return new BatteryStatus(ConnectionState.Connected, Math.Clamp((int)p[0], 0, 100), charging, readAt);
+        var percent = Math.Clamp((int)parameters[StateOfChargeIndex], 0, 100);
+        return new BatteryStatus(ConnectionState.Connected, percent, charging, readAt);
     }
 }
