@@ -11,6 +11,9 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
     private static readonly TimeSpan DiscoveryTimeout = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(1);
 
+    // shortcut: single supported model until device selection (multiple devices) is implemented
+    private const string SupportedDeviceName = "PRO X2 SUPERSTRIKE";
+
     private sealed record Target(string Path, byte DeviceIndex, byte FeatureIndex);
 
     private Target? _target;
@@ -121,6 +124,12 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
                         {
                             if (TryFindFeature(stream, index) is { } feature)
                             {
+                                var name = ReadName(stream, index);
+                                if (name != SupportedDeviceName)
+                                {
+                                    AppLog.Write($"Skipping device: PID {device.Long.ProductID:X4}, devIdx {index:X2}, name {(name is null ? "unreadable" : $"\"{name}\"")}");
+                                    continue;
+                                }
                                 AppLog.Write($"Device found: PID {device.Long.ProductID:X4}, devIdx {index:X2}, battery feature index {feature:X2}");
                                 return new Target(device.Long.DevicePath, index, feature);
                             }
@@ -140,6 +149,26 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
             return null;
         var r = Exchange(stream, HidPpMessage.BuildRequest(index, 0, 0, SwId, UnifiedBattery.FeatureId >> 8, UnifiedBattery.FeatureId & 0xFF), DiscoveryTimeout);
         return r is { } && r[4] != 0 ? r[4] : null;
+    }
+
+    /// <summary>Reads the DeviceName feature (0x0005); null if unsupported or unreadable.</summary>
+    private static string? ReadName(HidStream stream, byte index)
+    {
+        var r = Exchange(stream, HidPpMessage.BuildRequest(index, 0, 0, SwId, DeviceName.FeatureId >> 8, DeviceName.FeatureId & 0xFF), DiscoveryTimeout);
+        if (r is not { Length: > 4 } || r[4] == 0)
+            return null;
+        var feature = r[4];
+        if (Exchange(stream, HidPpMessage.BuildRequest(index, feature, DeviceName.GetCountFunction, SwId), DiscoveryTimeout) is not { Length: > 4 } count || count[4] == 0)
+            return null;
+        var length = Math.Min((int)count[4], 64);
+        var chunks = new List<byte[]>();
+        for (var pos = 0; pos < length; pos += 16)
+        {
+            if (Exchange(stream, HidPpMessage.BuildRequest(index, feature, DeviceName.GetNameFunction, SwId, (byte)pos), DiscoveryTimeout) is not { Length: > 4 } chunk)
+                return null;
+            chunks.Add(chunk[4..Math.Min(chunk.Length, 20)]);
+        }
+        return DeviceName.Assemble(length, chunks);
     }
 
     /// <summary>
