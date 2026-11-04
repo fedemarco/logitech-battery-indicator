@@ -87,10 +87,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _followUp.Tick += async (_, _) =>
         {
             _followUp.Stop();
-            await RefreshAsync();
+            var (ran, status) = await RefreshAsync();
             if (_exited)
                 return;
-            if (_lastStatus?.Connection != ConnectionState.Connected && ++_followUpStep < FollowUpDelays.Length)
+            // Skipped (another read in flight): retry the same step. Failed or not connected: next step.
+            if (ran && status?.Connection == ConnectionState.Connected)
+                return;
+            if (ran)
+                _followUpStep++;
+            if (_followUpStep < FollowUpDelays.Length)
             {
                 _followUp.Interval = FollowUpDelays[_followUpStep];
                 _followUp.Start();
@@ -120,10 +125,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _followUp.Start();
     }, null);
 
-    private async Task RefreshAsync()
+    /// <summary>Ran is false when skipped; Status is null when skipped or the read failed.</summary>
+    private async Task<(bool Ran, BatteryStatus? Status)> RefreshAsync()
     {
         if (_refreshing || _exited)
-            return;
+            return (false, null);
 
         _refreshing = true;
         string line;
@@ -145,7 +151,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         if (_exited)
-            return;
+            return (true, status);
 
         _notifyIcon.Text = BuildTooltip(line);
 
@@ -158,6 +164,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _indicator = indicator;
             old?.Dispose();
         }
+        return (true, status);
     }
 
     private static string BuildTooltip(string? statusLine)
