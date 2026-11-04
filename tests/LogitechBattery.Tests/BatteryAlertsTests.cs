@@ -32,7 +32,7 @@ public class BatteryAlertsTests
 
     [Fact]
     public void Full_resets() =>
-        Assert.Equal([BatteryAlert.Low, null, BatteryAlert.Low], Run(new(), Dis(10), Chg(100, ChargingState.Full), Dis(10)));
+        Assert.Equal([BatteryAlert.Low, BatteryAlert.Full, BatteryAlert.Low], Run(new(), Dis(10), Chg(100, ChargingState.Full), Dis(10)));
 
     [Fact]
     public void Bounce_fires_once() =>
@@ -80,4 +80,12 @@ public class BatteryAlertsTests
     public void Full_without_unplug_fires_once() =>
         Assert.Equal([null, BatteryAlert.Full, null, null],
             Run(new(), Chg(90), Chg(100, ChargingState.Full), Chg(99), Chg(100, ChargingState.Full)));
+
+    [Fact]
+    public void Full_after_discharge_without_a_charging_reading() =>
+        Assert.Equal([null, BatteryAlert.Full], Run(new(), Dis(80), Chg(100, ChargingState.Full)));
+
+    [Fact]
+    public void Replug_at_100_is_silent() =>
+        Assert.Equal([null, null], Run(new(), Dis(100), Chg(100)));
 }

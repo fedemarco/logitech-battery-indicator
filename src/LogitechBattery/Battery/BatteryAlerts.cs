@@ -8,14 +8,14 @@ public enum BatteryAlert
 }
 
 /// <summary>Decides when a reading deserves a notification: low/critical once per discharge cycle (at most one per reading),
-/// full once per charge that was seen charging.</summary>
+/// full once per charge, if the battery was seen below 100 % before (so a full mouse at startup stays silent).</summary>
 public sealed class BatteryAlerts
 {
     /// <summary>Percent at or above which a new discharge cycle is assumed (hysteresis against bouncing readings).</summary>
     private const int ResetPercent = 25;
 
     private BatteryLevel _notified = BatteryLevel.Good; // most severe level already notified
-    private bool _sawCharging; // full is only announced after charging was observed (not at startup)
+    private bool _fullArmed; // set once the battery was seen below 100 % (charging or discharging)
     private bool _fullNotified;
 
     public BatteryAlert? Update(BatteryStatus status)
@@ -29,18 +29,17 @@ public sealed class BatteryAlerts
         // Full: reported as Full, or as still charging at 100 % (the mouse may not send a separate full state).
         if (status.Charging == ChargingState.Full || (status.Charging == ChargingState.Charging && percent >= 100))
         {
-            if (!_sawCharging || _fullNotified)
+            if (!_fullArmed || _fullNotified)
                 return null;
             _fullNotified = true;
             return BatteryAlert.Full;
         }
+        if (percent < 100 && status.Charging is ChargingState.Charging or ChargingState.Discharging)
+            _fullArmed = true; // seen below 100 %, so a later full is a real completed charge
         if (status.Charging == ChargingState.Charging)
-        {
-            _sawCharging = true;
             return null;
-        }
         if (status.Charging == ChargingState.Discharging)
-            _sawCharging = _fullNotified = false; // unplugged: next charge can announce full again
+            _fullNotified = false; // unplugged: next charge can announce full again
         if (percent >= ResetPercent)
             return null;
         if (status.Charging != ChargingState.Discharging)
