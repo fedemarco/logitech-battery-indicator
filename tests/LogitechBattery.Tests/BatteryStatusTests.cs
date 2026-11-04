@@ -4,8 +4,6 @@ namespace LogitechBattery.Tests;
 
 public class BatteryStatusTests
 {
-    private static BatteryStatus Make(ConnectionState c, int? p, ChargingState ch) => new(c, p, ch, DateTimeOffset.UnixEpoch);
-
     [Theory]
     [InlineData(4, BatteryLevel.Critical)]
     [InlineData(5, BatteryLevel.Critical)]
@@ -13,12 +11,12 @@ public class BatteryStatusTests
     [InlineData(15, BatteryLevel.Low)]
     [InlineData(16, BatteryLevel.Good)]
     [InlineData(100, BatteryLevel.Good)]
-    public void Level_boundaries(int percent, BatteryLevel expected) =>
-        Assert.Equal(expected, Make(ConnectionState.Connected, percent, ChargingState.Discharging).Level);
+    public void Level_changes_at_the_critical_and_low_thresholds(int percent, BatteryLevel expected) =>
+        Assert.Equal(expected, TestStatus.Reading(ConnectionState.Connected, percent, ChargingState.Discharging).Level);
 
     [Fact]
-    public void Level_is_null_without_percent() =>
-        Assert.Null(Make(ConnectionState.Connected, null, ChargingState.Unknown).Level);
+    public void Level_is_unknown_without_percent() =>
+        Assert.Null(TestStatus.Reading(ConnectionState.Connected, null, ChargingState.Unknown).Level);
 
     [Theory]
     [InlineData(ConnectionState.Asleep, null, ChargingState.Unknown, "Mouse asleep")]
@@ -33,6 +31,6 @@ public class BatteryStatusTests
     [InlineData(ConnectionState.Connected, null, ChargingState.Discharging, "Battery unknown")]
     [InlineData(ConnectionState.Connected, 70, ChargingState.Unknown, "70%")]
     [InlineData(ConnectionState.Connected, null, ChargingState.Unknown, "Battery unknown")]
-    public void Display_string(ConnectionState c, int? p, ChargingState ch, string expected) =>
-        Assert.Equal(expected, Make(c, p, ch).ToDisplayString());
+    public void Display_string_describes_connection_charging_and_percent(ConnectionState connection, int? percent, ChargingState charging, string expected) =>
+        Assert.Equal(expected, TestStatus.Reading(connection, percent, charging).ToDisplayString());
 }

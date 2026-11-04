@@ -4,97 +4,101 @@ namespace LogitechBattery.Tests;
 
 public class BatteryAlertsTests
 {
-    private static BatteryStatus Dis(int p) => new(ConnectionState.Connected, p, ChargingState.Discharging, DateTimeOffset.UnixEpoch);
-    private static BatteryStatus Chg(int p, ChargingState s = ChargingState.Charging) => new(ConnectionState.Connected, p, s, DateTimeOffset.UnixEpoch);
+    private static readonly BatteryAlert? Quiet = null;
 
-    private static BatteryAlert?[] Run(BatteryAlerts a, params BatteryStatus[] readings) => readings.Select(a.Update).ToArray();
+    private static BatteryStatus Discharging(int percent) => TestStatus.Reading(ConnectionState.Connected, percent, ChargingState.Discharging);
+    private static BatteryStatus Charging(int percent) => TestStatus.Reading(ConnectionState.Connected, percent, ChargingState.Charging);
+    private static BatteryStatus Full() => TestStatus.Reading(ConnectionState.Connected, 100, ChargingState.Full);
+    private static BatteryStatus Asleep() => TestStatus.Reading(ConnectionState.Asleep, null, ChargingState.Unknown);
 
-    [Fact]
-    public void Normal_discharge() =>
-        Assert.Equal([null, BatteryAlert.Low, null, BatteryAlert.Critical, null],
-            Run(new(), Dis(20), Dis(15), Dis(10), Dis(5), Dis(3)));
+    private static BatteryAlert?[] AlertsFor(BatteryAlerts alerts, params BatteryStatus[] readings) =>
+        readings.Select(alerts.Update).ToArray();
 
-    [Fact]
-    public void Startup_at_4_is_critical_only() =>
-        Assert.Equal([BatteryAlert.Critical, null], Run(new(), Dis(4), Dis(3)));
+    private static BatteryAlert?[] AlertsFor(params BatteryStatus[] readings) => AlertsFor(new BatteryAlerts(), readings);
 
     [Fact]
-    public void Startup_at_10_is_low() =>
-        Assert.Equal([BatteryAlert.Low, null], Run(new(), Dis(10), Dis(9)));
+    public void Discharge_alerts_low_at_15_and_critical_at_5_once_each() =>
+        Assert.Equal([Quiet, BatteryAlert.Low, Quiet, BatteryAlert.Critical, Quiet],
+            AlertsFor(Discharging(20), Discharging(15), Discharging(10), Discharging(5), Discharging(3)));
 
     [Fact]
-    public void Jump_past_both_is_critical_only() =>
-        Assert.Equal([null, BatteryAlert.Critical, null], Run(new(), Dis(30), Dis(4), Dis(4)));
+    public void Starting_at_4_percent_alerts_critical_only() =>
+        Assert.Equal([BatteryAlert.Critical, Quiet], AlertsFor(Discharging(4), Discharging(3)));
 
     [Fact]
-    public void Charging_resets() =>
-        Assert.Equal([BatteryAlert.Low, null, BatteryAlert.Low], Run(new(), Dis(10), Chg(10), Dis(10)));
+    public void Starting_at_10_percent_alerts_low() =>
+        Assert.Equal([BatteryAlert.Low, Quiet], AlertsFor(Discharging(10), Discharging(9)));
 
     [Fact]
-    public void Full_resets() =>
-        Assert.Equal([BatteryAlert.Low, BatteryAlert.Full, BatteryAlert.Low], Run(new(), Dis(10), Chg(100, ChargingState.Full), Dis(10)));
+    public void Dropping_from_30_to_4_alerts_critical_only() =>
+        Assert.Equal([Quiet, BatteryAlert.Critical, Quiet], AlertsFor(Discharging(30), Discharging(4), Discharging(4)));
 
     [Fact]
-    public void Bounce_fires_once() =>
-        Assert.Equal([BatteryAlert.Low, null, null, null], Run(new(), Dis(15), Dis(16), Dis(15), Dis(16)));
+    public void Charging_in_between_makes_low_alert_again() =>
+        Assert.Equal([BatteryAlert.Low, Quiet, BatteryAlert.Low], AlertsFor(Discharging(10), Charging(10), Discharging(10)));
 
     [Fact]
-    public void Rising_to_25_resets() =>
-        Assert.Equal([BatteryAlert.Low, null, BatteryAlert.Low], Run(new(), Dis(15), Dis(25), Dis(15)));
+    public void Reaching_full_makes_low_alert_again() =>
+        Assert.Equal([BatteryAlert.Low, BatteryAlert.Full, BatteryAlert.Low], AlertsFor(Discharging(10), Full(), Discharging(10)));
 
     [Fact]
-    public void Asleep_and_not_found_are_ignored() =>
-        Assert.Equal([BatteryAlert.Low, null, null, null],
-            Run(new(), Dis(10),
-                new(ConnectionState.Asleep, null, ChargingState.Unknown, DateTimeOffset.UnixEpoch),
-                new(ConnectionState.NotFound, 90, ChargingState.Charging, DateTimeOffset.UnixEpoch),
-                Dis(10)));
+    public void Bouncing_around_15_percent_alerts_low_once() =>
+        Assert.Equal([BatteryAlert.Low, Quiet, Quiet, Quiet], AlertsFor(Discharging(15), Discharging(16), Discharging(15), Discharging(16)));
 
     [Fact]
-    public void Charging_at_3_does_nothing() =>
-        Assert.Null(new BatteryAlerts().Update(Chg(3)));
+    public void Rising_to_25_percent_makes_low_alert_again() =>
+        Assert.Equal([BatteryAlert.Low, Quiet, BatteryAlert.Low], AlertsFor(Discharging(15), Discharging(25), Discharging(15)));
 
     [Fact]
-    public void Unknown_charging_state_does_nothing() =>
-        Assert.Null(new BatteryAlerts().Update(new(ConnectionState.Connected, 3, ChargingState.Unknown, DateTimeOffset.UnixEpoch)));
+    public void Asleep_and_not_found_readings_are_ignored() =>
+        Assert.Equal([BatteryAlert.Low, Quiet, Quiet, Quiet],
+            AlertsFor(Discharging(10),
+                Asleep(),
+                TestStatus.Reading(ConnectionState.NotFound, 90, ChargingState.Charging),
+                Discharging(10)));
 
     [Fact]
-    public void Full_after_charging_once() =>
-        Assert.Equal([null, null, BatteryAlert.Full, null],
-            Run(new(), Chg(80), Chg(99), Chg(100, ChargingState.Full), Chg(100, ChargingState.Full)));
+    public void Charging_at_3_percent_is_quiet() =>
+        Assert.Equal([Quiet], AlertsFor(Charging(3)));
 
     [Fact]
-    public void Charging_at_100_counts_as_full() =>
-        Assert.Equal([null, BatteryAlert.Full, null], Run(new(), Chg(98), Chg(100), Chg(100)));
+    public void Unknown_charging_state_is_quiet() =>
+        Assert.Equal([Quiet], AlertsFor(TestStatus.Reading(ConnectionState.Connected, 3, ChargingState.Unknown)));
 
     [Fact]
-    public void Full_at_startup_is_silent() =>
-        Assert.Equal([null, null], Run(new(), Chg(100, ChargingState.Full), Chg(100)));
+    public void Full_alerts_once_after_charging_from_below() =>
+        Assert.Equal([Quiet, Quiet, BatteryAlert.Full, Quiet], AlertsFor(Charging(80), Charging(99), Full(), Full()));
 
     [Fact]
-    public void Full_again_after_unplug_and_recharge() =>
-        Assert.Equal([null, BatteryAlert.Full, null, null, BatteryAlert.Full],
-            Run(new(), Chg(90), Chg(100, ChargingState.Full), Dis(97), Chg(95), Chg(100, ChargingState.Full)));
+    public void Charging_at_100_percent_counts_as_full() =>
+        Assert.Equal([Quiet, BatteryAlert.Full, Quiet], AlertsFor(Charging(98), Charging(100), Charging(100)));
 
     [Fact]
-    public void Full_without_unplug_fires_once() =>
-        Assert.Equal([null, BatteryAlert.Full, null, null],
-            Run(new(), Chg(90), Chg(100, ChargingState.Full), Chg(99), Chg(100, ChargingState.Full)));
+    public void Full_at_startup_is_quiet() =>
+        Assert.Equal([Quiet, Quiet], AlertsFor(Full(), Charging(100)));
 
     [Fact]
-    public void Full_after_discharge_without_a_charging_reading() =>
-        Assert.Equal([null, BatteryAlert.Full], Run(new(), Dis(80), Chg(100, ChargingState.Full)));
+    public void Full_alerts_again_after_unplugging_and_recharging() =>
+        Assert.Equal([Quiet, BatteryAlert.Full, Quiet, Quiet, BatteryAlert.Full],
+            AlertsFor(Charging(90), Full(), Discharging(97), Charging(95), Full()));
 
     [Fact]
-    public void Replug_at_100_is_silent() =>
-        Assert.Equal([null, null], Run(new(), Dis(100), Chg(100)));
+    public void Full_without_unplugging_alerts_once() =>
+        Assert.Equal([Quiet, BatteryAlert.Full, Quiet, Quiet], AlertsFor(Charging(90), Full(), Charging(99), Full()));
 
     [Fact]
-    public void Replug_at_100_after_full_is_silent() =>
-        Assert.Equal([null, BatteryAlert.Full, null, null], Run(new(), Chg(90), Chg(100, ChargingState.Full), Dis(100), Chg(100)));
+    public void Full_alerts_after_discharging_without_a_charging_reading() =>
+        Assert.Equal([Quiet, BatteryAlert.Full], AlertsFor(Discharging(80), Full()));
 
     [Fact]
-    public void Full_after_discharge_with_asleep_in_between() =>
-        Assert.Equal([null, null, BatteryAlert.Full],
-            Run(new(), Dis(80), new BatteryStatus(ConnectionState.Asleep, null, ChargingState.Unknown, DateTimeOffset.UnixEpoch), Chg(100, ChargingState.Full)));
+    public void Replugging_at_100_percent_is_quiet() =>
+        Assert.Equal([Quiet, Quiet], AlertsFor(Discharging(100), Charging(100)));
+
+    [Fact]
+    public void Replugging_at_100_percent_after_full_is_quiet() =>
+        Assert.Equal([Quiet, BatteryAlert.Full, Quiet, Quiet], AlertsFor(Charging(90), Full(), Discharging(100), Charging(100)));
+
+    [Fact]
+    public void Full_alerts_after_discharging_with_asleep_in_between() =>
+        Assert.Equal([Quiet, Quiet, BatteryAlert.Full], AlertsFor(Discharging(80), Asleep(), Full()));
 }
