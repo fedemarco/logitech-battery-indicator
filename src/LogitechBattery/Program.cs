@@ -18,6 +18,6 @@ internal static class Program
             return;
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new TrayApplicationContext(new MockBatteryProvider()));
+        Application.Run(new TrayApplicationContext(args.Contains("--mock") ? new MockBatteryProvider() : new HidPpBatteryProvider()));
     }
 }

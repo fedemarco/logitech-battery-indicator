@@ -13,7 +13,6 @@ namespace LogitechBattery;
 /// </summary>
 internal sealed class HidPpProbe
 {
-    private const int LogitechVid = 0x046D;
     private const byte SwId = 0x0A;
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(1);
 
@@ -41,40 +40,21 @@ internal sealed class HidPpProbe
         Log($"{DateTimeOffset.Now:O}  {Environment.OSVersion}");
         Log("");
 
-        var devices = DeviceList.Local.GetHidDevices(LogitechVid).ToList();
+        var devices = DeviceList.Local.GetHidDevices(HidPpDevices.LogitechVid).ToList();
         Log($"== HID collections (VID 046D): {devices.Count}");
-        var infos = new List<(HidDevice Dev, uint Usage, int OutLen, string Group)>();
-        foreach (var d in devices)
-        {
-            var (usage, outLen) = DescribeCollection(d);
-            infos.Add((d, usage, outLen, GroupKey(d.DevicePath)));
-        }
+        var infos = devices.Select(DescribeCollection).ToList();
 
-        foreach (var group in infos.GroupBy(i => i.Group))
+        foreach (var device in HidPpDevices.Group(infos))
         {
-            // HID++ lives on a vendor usage page (usually 0xFF00, newer devices may differ):
-            // long collection = 20-byte reports, short = 7-byte.
-            var vendor = group.Where(i => i.Usage >> 16 >= 0xFF00).ToList();
-            var longs = vendor.Where(i => i.OutLen == 20).ToList();
-            if (longs.Count == 0)
-                continue;
-            var hidpp = vendor.Select(i => i.Dev).ToList();
             Log("");
-            Log($"== Physical device {group.Key}");
-            try { ProbeDevice(hidpp, longs[0].Dev); }
+            Log($"== Physical device {device.Key}");
+            try { ProbeDevice(device.Collections, device.Long); }
             catch (Exception ex) { Log($"ERROR probing device: {ex.Message}"); }
         }
     }
 
-    // Everything before "&col" identifies the physical device.
-    private static string GroupKey(string path)
-    {
-        var i = path.IndexOf("&col", StringComparison.OrdinalIgnoreCase);
-        return i > 0 ? path[..i] : path;
-    }
-
     /// <summary>Logs one collection; returns page&lt;&lt;16|usage of its first top-level usage (0 if unknown) and its max output length.</summary>
-    private (uint Usage, int OutLen) DescribeCollection(HidDevice d)
+    private HidCollection DescribeCollection(HidDevice d)
     {
         string name;
         try { name = d.GetProductName(); } catch (Exception ex) { name = $"<error: {ex.Message}>"; }
@@ -91,7 +71,7 @@ internal sealed class HidPpProbe
         try { inLen = d.GetMaxInputReportLength(); outLen = d.GetMaxOutputReportLength(); } catch { }
         Log($"PID {d.ProductID:X4}  \"{name}\"  usage(page:usage) {usages}  maxIn {inLen}  maxOut {outLen}");
         Log($"    {d.DevicePath}");
-        return (first, outLen);
+        return new HidCollection(d, first, outLen);
     }
 
     private void ProbeDevice(List<HidDevice> collections, HidDevice longDevice)

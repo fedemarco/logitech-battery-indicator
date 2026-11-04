@@ -64,12 +64,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
             Visible = true,
         };
 
-        // 1 s is for the mock; the real device will be polled less often.
-        _timer = new System.Windows.Forms.Timer { Interval = 1000 };
+        _timer = new System.Windows.Forms.Timer { Interval = provider is MockBatteryProvider ? 1000 : 60_000 };
         _timer.Tick += (_, _) => _ = RefreshAsync();
         _timer.Start();
 
-        _ = RefreshAsync();
+        // First refresh once the message loop runs, so awaited reads resume on the UI thread.
+        void FirstRefresh(object? sender, EventArgs e)
+        {
+            Application.Idle -= FirstRefresh;
+            _ = RefreshAsync();
+        }
+        Application.Idle += FirstRefresh;
     }
 
     private async Task RefreshAsync()
@@ -87,6 +92,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
         catch (Exception)
         {
+            // the provider logs the details
             line = "Battery read failed";
         }
         finally
