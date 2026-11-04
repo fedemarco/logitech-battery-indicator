@@ -72,6 +72,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
             menu.Items.Add(new ToolStripSeparator());
         }
 
+        if (provider is not MockBatteryProvider)
+        {
+            AutoStart.EnableOnFirstRun();
+            var startItem = new ToolStripMenuItem("Start with Windows");
+            startItem.Click += (_, _) =>
+            {
+                if (AutoStart.IsEnabled())
+                    AutoStart.Disable();
+                else
+                    AutoStart.Enable(); // also rewrites an entry pointing to another path
+            };
+            menu.Opening += (_, _) => startItem.Checked = AutoStart.IsEnabled();
+            menu.Items.Add(startItem);
+        }
+
         menu.Items.Add("Exit", null, (_, _) => ExitApp());
 
         _notifyIcon = new NotifyIcon
