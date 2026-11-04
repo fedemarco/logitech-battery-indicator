@@ -4,7 +4,7 @@ Windows tray app showing the battery level of a Logitech PRO X2 SUPERSTRIKE mous
 
 **Status:** early development. A minimal tray app exists; battery reading is not implemented yet. See [docs/PLAN.md](docs/PLAN.md).
 
-Third-party notices (battery icons): [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Third-party notices (battery icons, HidSharp): [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Build locally
 
