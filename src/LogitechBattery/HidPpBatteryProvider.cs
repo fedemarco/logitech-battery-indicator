@@ -15,6 +15,17 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
 
     private Target? _target;
     private ConnectionState? _lastState;
+    private volatile bool _rediscover;
+
+    /// <summary>Raised (on a background thread) when USB HID devices are added or removed, e.g. cable plugged in.</summary>
+    public event Action? DevicesChanged;
+
+    public HidPpBatteryProvider() => DeviceList.Local.Changed += (_, _) =>
+    {
+        AppLog.Write("USB devices changed");
+        _rediscover = true; // the best route may have changed (cable preferred over receiver)
+        DevicesChanged?.Invoke();
+    };
 
     public Task<BatteryStatus> ReadAsync(CancellationToken cancellationToken = default) => Task.Run(Read, cancellationToken);
 
@@ -34,6 +45,11 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
     private BatteryStatus ReadCore(bool retry)
     {
         var now = DateTimeOffset.Now;
+        if (_rediscover)
+        {
+            _rediscover = false;
+            _target = null;
+        }
         _target ??= Discover();
         if (_target is not { } target)
             // A receiver without an answering mouse means the mouse sleeps or is off.

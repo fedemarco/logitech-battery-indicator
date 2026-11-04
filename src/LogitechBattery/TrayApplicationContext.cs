@@ -19,10 +19,18 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private const int MaxTooltipLength = 63;
 
+    // Reads after a USB change: the cable shows up at once, but after unplugging it the mouse
+    // needs a few seconds to reconnect wirelessly. Stops as soon as the mouse is connected.
+    private static readonly int[] FollowUpDelays = [1000, 5000, 15000];
+
     private readonly IBatteryProvider _provider;
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _menu;
     private readonly System.Windows.Forms.Timer _timer;
+    private readonly System.Windows.Forms.Timer _followUp = new();
+    private int _followUpStep;
+    private SynchronizationContext? _ui;
+    private BatteryStatus? _lastStatus;
     private readonly int _iconSize = SystemInformation.SmallIconSize.Width;
     private Icon? _icon;
     private TrayIndicator? _indicator;
@@ -68,14 +76,41 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _timer.Tick += (_, _) => _ = RefreshAsync();
         _timer.Start();
 
+        _followUp.Tick += async (_, _) =>
+        {
+            _followUp.Stop();
+            await RefreshAsync();
+            if (_exited)
+                return;
+            if (_lastStatus?.Connection != ConnectionState.Connected && ++_followUpStep < FollowUpDelays.Length)
+            {
+                _followUp.Interval = FollowUpDelays[_followUpStep];
+                _followUp.Start();
+            }
+        };
+        if (provider is HidPpBatteryProvider hid)
+            hid.DevicesChanged += OnDevicesChanged;
+
         // First refresh once the message loop runs, so awaited reads resume on the UI thread.
         void FirstRefresh(object? sender, EventArgs e)
         {
             Application.Idle -= FirstRefresh;
+            _ui = SynchronizationContext.Current;
             _ = RefreshAsync();
         }
         Application.Idle += FirstRefresh;
     }
+
+    // Background thread: hop to the UI thread and (re)start the follow-up reads.
+    private void OnDevicesChanged() => _ui?.Post(_ =>
+    {
+        if (_exited)
+            return;
+        _followUpStep = 0;
+        _followUp.Stop();
+        _followUp.Interval = FollowUpDelays[0];
+        _followUp.Start();
+    }, null);
 
     private async Task RefreshAsync()
     {
@@ -89,6 +124,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             status = await _provider.ReadAsync();
             line = status.ToDisplayString();
+            _lastStatus = status;
         }
         catch (Exception)
         {
@@ -136,8 +172,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void ExitApp()
     {
         _exited = true;
+        if (_provider is HidPpBatteryProvider hid)
+            hid.DevicesChanged -= OnDevicesChanged;
         _timer.Stop();
         _timer.Dispose();
+        _followUp.Stop();
+        _followUp.Dispose();
         _notifyIcon.Visible = false; // hide first to avoid a ghost icon
         _notifyIcon.Dispose();
         _icon?.Dispose();
