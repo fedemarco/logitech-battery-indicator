@@ -2,7 +2,9 @@
 
 Windows tray app showing the battery level of a Logitech PRO X2 SUPERSTRIKE mouse (C# / .NET 10, WinForms, HID++).
 
-**Status:** early development. The tray app works with simulated battery data; reading the real mouse is in progress.
+The tray icon shows the mouse battery, read over HID++ via the Lightspeed receiver or the USB cable (refreshed every minute). Diagnostics go to `%LOCALAPPDATA%\LogitechBattery\log.txt`.
+
+`LogitechBattery.exe --mock` starts with a simulated battery and a Simulator menu instead of reading the mouse.
 
 Third-party notices (battery icons, HidSharp): [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
