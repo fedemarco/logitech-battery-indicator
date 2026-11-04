@@ -3,7 +3,7 @@ using System.Globalization;
 namespace LogitechBattery;
 
 /// <summary>Tiny local log file: %LOCALAPPDATA%\LogitechBattery\log.txt. Never throws.</summary>
-internal static class AppLog
+public static class AppLog
 {
     private const long MaxBytes = 256 * 1024;
     private const long HardLimitBytes = 1024 * 1024;

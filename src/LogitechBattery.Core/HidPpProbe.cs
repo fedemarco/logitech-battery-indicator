@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using HidSharp;
@@ -9,16 +8,17 @@ namespace LogitechBattery;
 
 /// <summary>
 /// One-off diagnostic (<c>--probe</c>): lists Logitech HID collections and sends read-only HID++ 2.0 queries,
-/// logging every report as hex. Writes %LOCALAPPDATA%\LogitechBattery\probe.txt and opens it in Notepad.
+/// logging every report as hex. Writes %LOCALAPPDATA%\LogitechBattery\probe.txt.
 /// </summary>
-internal sealed class HidPpProbe
+public sealed class HidPpProbe
 {
     private const byte SwId = 0x0A;
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(1);
 
     private readonly StringBuilder _log = new();
 
-    public static void Run()
+    /// <summary>Runs the probe and returns the path of the report file.</summary>
+    public static string Run()
     {
         var probe = new HidPpProbe();
         try { probe.Execute(); }
@@ -28,7 +28,7 @@ internal sealed class HidPpProbe
         Directory.CreateDirectory(dir);
         var file = Path.Combine(dir, "probe.txt");
         File.WriteAllText(file, probe._log.ToString());
-        Process.Start(new ProcessStartInfo("notepad.exe", $"\"{file}\"") { UseShellExecute = true });
+        return file;
     }
 
     private void Log(string line) => _log.AppendLine(line);

@@ -5,7 +5,7 @@ using LogitechBattery.HidPp;
 namespace LogitechBattery;
 
 /// <summary>Reads the mouse battery over HID++ 2.0 (Unified Battery), via Lightspeed receiver or USB cable.</summary>
-internal sealed class HidPpBatteryProvider : IBatteryProvider
+public sealed class HidPpBatteryProvider : IBatteryProvider
 {
     private const byte SwId = 0x0A;
     private const int WriteTimeoutMs = 200;

@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="HidSharp" Version="2.6.4" />
+    <ProjectReference Include="..\LogitechBattery.Core\LogitechBattery.Core.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using LogitechBattery.Battery;
 
 namespace LogitechBattery;
@@ -9,7 +10,8 @@ internal static class Program
     {
         if (args.Contains("--probe"))
         {
-            HidPpProbe.Run();
+            var report = HidPpProbe.Run();
+            Process.Start(new ProcessStartInfo("notepad.exe", $"\"{report}\"") { UseShellExecute = true });
             return;
         }
 

@@ -7,8 +7,8 @@
 
   <ItemGroup>
     <!-- Non-UI sources are compiled here (not referenced) so they are tested without Windows. -->
-    <Compile Include="../../src/LogitechBattery/Battery/**/*.cs" Link="Battery/%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="../../src/LogitechBattery/HidPp/**/*.cs" Link="HidPp/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../src/LogitechBattery.Core/Battery/**/*.cs" Link="Battery/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../../src/LogitechBattery.Core/HidPp/**/*.cs" Link="HidPp/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
