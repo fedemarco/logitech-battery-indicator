@@ -73,7 +73,7 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
                 var response = Exchange(stream, request, ReadTimeout);
                 if (response is null)
                     return Result(ConnectionState.Asleep, now);
-                var status = UnifiedBattery.ParseStatus(response.AsSpan(4, 4), now);
+                var status = UnifiedBattery.ParseStatus(response.AsSpan(4), now);
                 LogState(ConnectionState.Connected);
                 return status;
             }

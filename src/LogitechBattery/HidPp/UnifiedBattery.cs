@@ -8,9 +8,11 @@ internal static class UnifiedBattery
     public const ushort FeatureId = 0x1004;
     public const int GetStatusFunction = 1;
 
-    /// <summary>Parses getStatus params: [stateOfCharge%, levelFlags, chargingStatus, externalPower].</summary>
+    /// <summary>Parses getStatus params: [stateOfCharge%, levelFlags, chargingStatus, externalPower]. Throws FormatException if shorter.</summary>
     public static BatteryStatus ParseStatus(ReadOnlySpan<byte> p, DateTimeOffset readAt)
     {
+        if (p.Length < 4)
+            throw new FormatException($"Unified Battery status needs 4 bytes, got {p.Length}.");
         var charging = p[2] switch
         {
             0 => ChargingState.Discharging,

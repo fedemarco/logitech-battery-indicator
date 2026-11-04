@@ -154,7 +154,7 @@ internal sealed class HidPpProbe
             {
                 var sb = new StringBuilder();
                 for (int pos = 0; pos < Math.Min((int)count, 64) && Request(writer, reports, dev, nameIdx, 1, (byte)pos) is { } r; pos += 16)
-                    sb.Append(Encoding.ASCII.GetString(r, 4, 16).TrimEnd('\0'));
+                    sb.Append(Encoding.ASCII.GetString(r, 4, Math.Min(16, r.Length - 4)).TrimEnd('\0'));
                 Log($"  device name: \"{sb}\"");
             }
         }

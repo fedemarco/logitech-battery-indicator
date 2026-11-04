@@ -34,4 +34,8 @@ public class UnifiedBatteryTests
     [Fact]
     public void Percent_IsClamped() =>
         Assert.Equal(100, UnifiedBattery.ParseStatus([200, 8, 0, 0], Now).Percent);
+
+    [Fact]
+    public void ShortParams_Throw() =>
+        Assert.Throws<FormatException>(() => UnifiedBattery.ParseStatus(new byte[] { 50, 4, 0 }, Now));
 }
