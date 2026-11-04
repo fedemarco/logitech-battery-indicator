@@ -18,7 +18,7 @@ Development is on macOS; the app builds there but only runs on Windows.
 
 ```sh
 dotnet build
-dotnet publish src/LogitechBattery -c Release   # self-contained single-file win-x64 exe
+dotnet publish src/LogitechBattery.App -c Release   # self-contained single-file win-x64 exe
 ```
 
 ## CI
@@ -57,7 +57,7 @@ powershell -ExecutionPolicy Bypass -File update.ps1 -Release   # latest release
 
 ## Cutting a release
 
-Bump `VersionPrefix` in the csproj if needed, then:
+Bump `VersionPrefix` in `Directory.Build.props` if needed, then:
 
 ```sh
 git tag vX.Y.Z && git push origin vX.Y.Z
