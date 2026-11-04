@@ -1,4 +1,5 @@
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using LogitechBattery.Battery;
 
@@ -15,26 +16,32 @@ internal static class TrayIconRenderer
     // shortcut: icon size taken at startup; redraw on DPI change if users switch scaling
     public static Icon Render(TrayIndicator indicator, int size)
     {
-        var source = Load(indicator.Icon);
+        using var bitmap = Draw(Load(indicator.Icon), size);
+        return ToIcon(bitmap);
+    }
 
-        using var bitmap = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(bitmap))
-        {
-            // The art is drawn in 2x2 blocks, so nearest-neighbor at 32 -> 16 is pixel-exact.
-            g.InterpolationMode = InterpolationMode.NearestNeighbor;
-            g.PixelOffsetMode = PixelOffsetMode.Half;
-            g.DrawImage(source, new Rectangle(0, 0, size, size));
-        }
+    private static Bitmap Draw(Bitmap source, int size)
+    {
+        var bitmap = new Bitmap(size, size, PixelFormat.Format32bppArgb);
+        using var graphics = Graphics.FromImage(bitmap);
+        // The art is drawn in 2x2 blocks, so nearest-neighbor at 32 -> 16 is pixel-exact.
+        graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+        graphics.PixelOffsetMode = PixelOffsetMode.Half;
+        graphics.DrawImage(source, new Rectangle(0, 0, size, size));
+        return bitmap;
+    }
 
-        var hIcon = bitmap.GetHicon();
+    private static Icon ToIcon(Bitmap bitmap)
+    {
+        var handle = bitmap.GetHicon();
         try
         {
-            using var temp = Icon.FromHandle(hIcon);
+            using var temp = Icon.FromHandle(handle);
             return (Icon)temp.Clone(); // the clone owns its own data, so the handle can be freed
         }
         finally
         {
-            DestroyIcon(hIcon);
+            DestroyIcon(handle);
         }
     }
 
@@ -46,6 +53,8 @@ internal static class TrayIconRenderer
         using var stream = typeof(TrayIconRenderer).Assembly.GetManifestResourceStream(icon + ".png")
             ?? throw new InvalidOperationException($"Missing icon resource {icon}");
         using var png = new Bitmap(stream);
-        return Cache[icon] = new Bitmap(png); // copy: a Bitmap needs its stream alive, this one doesn't
+        var copy = new Bitmap(png); // a Bitmap needs its stream alive, the copy doesn't
+        Cache[icon] = copy;
+        return copy;
     }
 }

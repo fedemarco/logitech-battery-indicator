@@ -6,11 +6,10 @@ namespace LogitechBattery;
 internal static class AutoStart
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    // Task Manager's "Startup apps" toggle: a binary value whose first byte is odd when disabled.
-    private const string ApprovedKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+    private const string StartupApprovedKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
     private const string ExeName = "LogitechBattery.exe";
     private const string ValueName = "LogitechBattery";
-    private const string AppKey = @"Software\LogitechBattery";
+    private const string AppSettingsKey = @"Software\LogitechBattery";
     private const string InitializedValue = "AutoStartInitialized";
 
     private static string? Command => Environment.ProcessPath is { } path ? $"\"{path}\"" : null;
@@ -19,13 +18,13 @@ internal static class AutoStart
     {
         try
         {
-            using var key = Registry.CurrentUser.OpenSubKey(RunKey);
-            if (key?.GetValue(ValueName) is not string value
+            using var runKey = Registry.CurrentUser.OpenSubKey(RunKey);
+            if (runKey?.GetValue(ValueName) is not string value
                 || Command is not { } command
                 || !string.Equals(value, command, StringComparison.OrdinalIgnoreCase))
                 return false;
-            using var approved = Registry.CurrentUser.OpenSubKey(ApprovedKey);
-            return approved?.GetValue(ValueName) is not byte[] { Length: > 0 } flags || (flags[0] & 1) == 0;
+            using var approvedKey = Registry.CurrentUser.OpenSubKey(StartupApprovedKey);
+            return IsApprovedInStartupApps(approvedKey?.GetValue(ValueName));
         }
         catch (Exception ex)
         {
@@ -34,6 +33,10 @@ internal static class AutoStart
         }
     }
 
+    // Task Manager's "Startup apps" toggle stores a binary value whose first byte is odd when the entry is disabled; no value means enabled.
+    private static bool IsApprovedInStartupApps(object? value) =>
+        value is not byte[] { Length: > 0 } flags || (flags[0] & 1) == 0;
+
     /// <summary>Writes the Run entry and clears a Task Manager "disabled" flag. Returns false on failure.</summary>
     public static bool Enable()
     {
@@ -41,10 +44,10 @@ internal static class AutoStart
         {
             if (Command is not { } command)
                 return false;
-            using (var key = Registry.CurrentUser.CreateSubKey(RunKey))
-                key.SetValue(ValueName, command);
-            using (var approved = Registry.CurrentUser.OpenSubKey(ApprovedKey, writable: true))
-                approved?.DeleteValue(ValueName, throwOnMissingValue: false);
+            using var runKey = Registry.CurrentUser.CreateSubKey(RunKey);
+            runKey.SetValue(ValueName, command);
+            using var approvedKey = Registry.CurrentUser.OpenSubKey(StartupApprovedKey, writable: true);
+            approvedKey?.DeleteValue(ValueName, throwOnMissingValue: false);
             return true;
         }
         catch (Exception ex)
@@ -58,8 +61,8 @@ internal static class AutoStart
     {
         try
         {
-            using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
-            key?.DeleteValue(ValueName, throwOnMissingValue: false);
+            using var runKey = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
+            runKey?.DeleteValue(ValueName, throwOnMissingValue: false);
         }
         catch (Exception ex)
         {
@@ -72,14 +75,14 @@ internal static class AutoStart
     {
         try
         {
-            using var app = Registry.CurrentUser.CreateSubKey(AppKey);
-            if (app.GetValue(InitializedValue) is not null)
+            using var appKey = Registry.CurrentUser.CreateSubKey(AppSettingsKey);
+            if (appKey.GetValue(InitializedValue) is not null)
                 return;
             // Only the real app registers itself (not e.g. dotnet.exe during development).
             if (!string.Equals(Path.GetFileName(Environment.ProcessPath), ExeName, StringComparison.OrdinalIgnoreCase))
                 return;
             if (Enable())
-                app.SetValue(InitializedValue, 1, RegistryValueKind.DWord); // retried next start if writing failed
+                appKey.SetValue(InitializedValue, 1, RegistryValueKind.DWord); // retried next start if writing failed
         }
         catch (Exception ex)
         {
