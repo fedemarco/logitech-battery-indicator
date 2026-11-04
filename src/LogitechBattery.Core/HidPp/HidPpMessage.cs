@@ -19,6 +19,7 @@ internal static class HidPpMessage
     public const byte ShortId = 0x10;
     public const byte LongId = 0x11;
     public const int LongLength = 20;
+    public const int ShortLength = 7;
 
     /// <summary>Report id, device index, feature index, function and software id.</summary>
     public const int HeaderLength = 4;
@@ -33,10 +34,15 @@ internal static class HidPpMessage
     /// <summary>Device indexes of the paired devices on a Lightspeed receiver.</summary>
     public static readonly byte[] ReceiverDeviceIndexes = [1, 2, 3, 4, 5, 6];
 
+    /// <summary>Device index that addresses the receiver itself.</summary>
+    public const byte ReceiverIndex = 0xFF;
+
     public const byte RootFeatureIndex = 0;
     public const int GetFeatureFunction = 0;
     public const int PingFunction = 1;
     public const byte PingEcho = 0x5A;
+
+    private const byte GetRegisterSubId = 0x81;
 
     private const int DeviceIndexOffset = 1;
     private const int FeatureIndexOffset = 2;
@@ -74,6 +80,10 @@ internal static class HidPpMessage
     /// <summary>Root feature, getFeature: asks which feature index the device uses for <paramref name="featureId"/>.</summary>
     public static byte[] BuildGetFeature(byte deviceIndex, ushort featureId) =>
         BuildRequest(deviceIndex, RootFeatureIndex, GetFeatureFunction, SoftwareId, (byte)(featureId >> 8), (byte)featureId);
+
+    /// <summary>HID++ 1.0 short "get register" request: reads a register without changing it.</summary>
+    public static byte[] BuildGetRegister(byte deviceIndex, byte register) =>
+        [ShortId, deviceIndex, GetRegisterSubId, register, 0, 0, 0];
 
     /// <summary>The parameter bytes of a report (up to the 20-byte long report size).</summary>
     public static byte[] ParamsOf(byte[] report) => report[ParamsOffset..Math.Min(report.Length, LongLength)];

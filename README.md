@@ -55,6 +55,14 @@ powershell -ExecutionPolicy Bypass -File update.ps1 -Release   # latest release
 
 (cmd: `"%LOCALAPPDATA%\LogitechBattery\LogitechBattery.exe" --probe`). Wake the mouse (move it) first.
 
+## Listen (HID++ notifications)
+
+`--listen` keeps the Logitech HID++ collections open and logs every report they deliver, with timestamps, until you click OK; it reopens them after USB changes. The only request it sends is a read of the receiver's notification flags. The report goes to `%LOCALAPPDATA%\LogitechBattery\listen.txt` (opened in Notepad). Leave the tray app running: its own requests and their answers show up in the log too.
+
+```powershell
+& "$env:LOCALAPPDATA\LogitechBattery\LogitechBattery.exe" --listen
+```
+
 ## Cutting a release
 
 Bump `VersionPrefix` in `Directory.Build.props` if needed, then:

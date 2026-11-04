@@ -34,6 +34,11 @@ public class HidPpMessageTests
             HidPpMessage.BuildRequest(DeviceIndex, FeatureIndex, 0, HidPpMessage.SoftwareId, new byte[17]));
 
     [Fact]
+    public void Get_register_is_a_short_report_with_the_read_sub_id_and_the_register_address() =>
+        Assert.Equal([0x10, 0xFF, 0x81, 0x00, 0x00, 0x00, 0x00],
+            HidPpMessage.BuildGetRegister(HidPpMessage.ReceiverIndex, register: 0x00));
+
+    [Fact]
     public void Ping_asks_the_root_feature_for_the_protocol_version_and_carries_the_echo_byte() =>
         Assert.Equal([0x11, DeviceIndex, 0x00, Function1WithSoftwareId, 0x00, 0x00, 0x5A],
             HidPpMessage.BuildPing(DeviceIndex)[..7]);

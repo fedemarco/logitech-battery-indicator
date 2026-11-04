@@ -10,8 +10,15 @@ internal static class Program
     {
         if (args.Contains("--probe"))
         {
-            var report = HidPpProbe.Run();
-            Process.Start(new ProcessStartInfo("notepad.exe", $"\"{report}\"") { UseShellExecute = true });
+            OpenInNotepad(HidPpProbe.Run());
+            return;
+        }
+        if (args.Contains("--listen"))
+        {
+            ApplicationConfiguration.Initialize();
+            OpenInNotepad(HidPpListener.Run(() => MessageBox.Show(
+                "Listening to the mouse and receiver.\n\nUnplug and replug, let the mouse sleep and wake it, then click OK to stop.",
+                "Logitech Battery — listening")));
             return;
         }
 
@@ -22,4 +29,7 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         Application.Run(new TrayApplicationContext(args.Contains("--mock") ? new MockBatteryProvider() : new HidPpBatteryProvider()));
     }
+
+    private static void OpenInNotepad(string file) =>
+        Process.Start(new ProcessStartInfo("notepad.exe", $"\"{file}\"") { UseShellExecute = true });
 }
