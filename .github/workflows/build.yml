@@ -24,7 +24,7 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - run: dotnet test
-      - run: dotnet publish src/LogitechBattery -c Release -p:VersionSuffix=dev.${{ github.run_number }} -o out
+      - run: dotnet publish src/LogitechBattery.App -c Release -p:VersionSuffix=dev.${{ github.run_number }} -o out
       - uses: actions/upload-artifact@v7
         with:
           name: LogitechBattery-win-x64
@@ -43,7 +43,7 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - run: dotnet test
-      - run: dotnet publish src/LogitechBattery -c Release -p:Version=${GITHUB_REF_NAME#v} -o out
+      - run: dotnet publish src/LogitechBattery.App -c Release -p:Version=${GITHUB_REF_NAME#v} -o out
       - run: gh release create "$GITHUB_REF_NAME" out/LogitechBattery.exe THIRD-PARTY-NOTICES.md --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
