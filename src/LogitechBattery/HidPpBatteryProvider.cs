@@ -22,7 +22,7 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
     {
         try
         {
-            return ReadCore();
+            return ReadCore(retry: true);
         }
         catch (Exception ex)
         {
@@ -31,16 +31,17 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
         }
     }
 
-    private BatteryStatus ReadCore()
+    private BatteryStatus ReadCore(bool retry)
     {
         var now = DateTimeOffset.Now;
         _target ??= Discover();
         if (_target is not { } target)
-            return Result(ConnectionState.NotFound, now);
+            // A receiver without an answering mouse means the mouse sleeps or is off.
+            return Result(HidPpDevices.Find().Count > 0 ? ConnectionState.Asleep : ConnectionState.NotFound, now);
 
         var device = DeviceList.Local.GetHidDevices(HidPpDevices.LogitechVid).FirstOrDefault(d => d.DevicePath == target.Path);
         if (device is null || !device.TryOpen(out var stream))
-            return Lost(target, now);
+            return Lost(target, now, retry);
 
         try
         {
@@ -58,15 +59,16 @@ internal sealed class HidPpBatteryProvider : IBatteryProvider
         }
         catch (IOException)
         {
-            return Lost(target, now); // unplugged mid-read
+            return Lost(target, now, retry); // unplugged mid-read
         }
     }
 
-    private BatteryStatus Lost(Target target, DateTimeOffset now)
+    // Rediscover once right away (e.g. cable unplugged while the receiver is still there).
+    private BatteryStatus Lost(Target target, DateTimeOffset now, bool retry)
     {
         AppLog.Write($"Device lost: {target.Path}");
         _target = null;
-        return Result(ConnectionState.NotFound, now);
+        return retry ? ReadCore(retry: false) : Result(ConnectionState.NotFound, now);
     }
 
     private BatteryStatus Result(ConnectionState state, DateTimeOffset now)
