@@ -6,9 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Non-UI sources are compiled here (not referenced) so they are tested without Windows. -->
-    <Compile Include="../../src/LogitechBattery.Core/Battery/**/*.cs" Link="Battery/%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="../../src/LogitechBattery.Core/HidPp/**/*.cs" Link="HidPp/%(RecursiveDir)%(Filename)%(Extension)" />
+    <ProjectReference Include="..\..\src\LogitechBattery.Core\LogitechBattery.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
