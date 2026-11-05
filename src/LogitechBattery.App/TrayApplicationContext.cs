@@ -23,36 +23,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private const int MaxTooltipLength = 63;
     private const int ShortShaLength = 7;
 
-    // Reads after a change (USB, mouse link, battery event): the cable shows up at once, but the
-    // mouse can take a while to reconnect wirelessly. 1 s, then every 5 s for a minute, every 10 s,
-    // 15 s and 30 s for a minute each; then the regular 60 s poll. Stops as soon as the mouse is connected.
-    private static readonly int[] FollowUpDelays =
-    [
-        1000,
-        .. Enumerable.Repeat(5000, 12),
-        .. Enumerable.Repeat(10_000, 6),
-        .. Enumerable.Repeat(15_000, 4),
-        .. Enumerable.Repeat(30_000, 2),
-    ];
-
-    private enum FollowUpDecision
-    {
-        /// <summary>The mouse is connected: nothing more to chase.</summary>
-        Stop,
-
-        /// <summary>Another read was in flight and this one was skipped: try the same step again.</summary>
-        RetrySameStep,
-
-        /// <summary>The read failed or the mouse is not connected yet.</summary>
-        NextStep,
-    }
-
     private readonly IBatteryProvider _provider;
     private readonly BatteryAlerts _alerts = new();
     private readonly NotifyIcon _notifyIcon;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly System.Windows.Forms.Timer _followUp = new();
-    private int _followUpStep;
+    private readonly FollowUpSchedule _followUpSchedule = new();
     private volatile SynchronizationContext? _ui;
     private readonly int _iconSize = SystemInformation.SmallIconSize.Width;
     private Icon? _icon;
@@ -152,8 +128,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         if (_exited)
             return;
-        _followUp.Stop();
-        ScheduleFollowUp(step: 0);
+        StartFollowUpTimer(_followUpSchedule.Restart());
     }, null);
 
     private async void OnFollowUpTickAsync(object? sender, EventArgs e)
@@ -161,19 +136,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         try
         {
             _followUp.Stop();
+            var generation = _followUpSchedule.Generation;
             var (ran, status) = await RefreshAsync();
             if (_exited)
                 return;
 
-            switch (DecideFollowUp(ran, status))
-            {
-                case FollowUpDecision.RetrySameStep:
-                    ScheduleFollowUp(_followUpStep);
-                    break;
-                case FollowUpDecision.NextStep:
-                    ScheduleFollowUp(_followUpStep + 1);
-                    break;
-            }
+            if (_followUpSchedule.Finish(generation, ran, status) is { } delayMs)
+                StartFollowUpTimer(delayMs);
         }
         catch (Exception ex)
         {
@@ -181,18 +150,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private static FollowUpDecision DecideFollowUp(bool ran, BatteryStatus? status) =>
-        !ran ? FollowUpDecision.RetrySameStep
-        : status?.Connection == ConnectionState.Connected ? FollowUpDecision.Stop
-        : FollowUpDecision.NextStep;
-
-    /// <summary>Runs the follow-up read for <paramref name="step"/>; past the last step the regular poll takes over.</summary>
-    private void ScheduleFollowUp(int step)
+    private void StartFollowUpTimer(int delayMs)
     {
-        _followUpStep = step;
-        if (step >= FollowUpDelays.Length)
-            return;
-        _followUp.Interval = FollowUpDelays[step];
+        _followUp.Stop();
+        _followUp.Interval = delayMs;
         _followUp.Start();
     }
 
