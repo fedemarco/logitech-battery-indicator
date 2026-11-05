@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using LogitechBattery.Battery;
 
 namespace LogitechBattery;
@@ -27,7 +28,11 @@ internal static class Program
             return;
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new TrayApplicationContext(args.Contains("--mock") ? new MockBatteryProvider() : new HidPpBatteryProvider()));
+        var useMock = args.Contains("--mock");
+        var version = AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()) ?? "unknown";
+        var mode = useMock ? "mock" : "HID++";
+        AppLog.Write($"Started LogitechBattery {version} ({mode})");
+        Application.Run(new TrayApplicationContext(useMock ? new MockBatteryProvider() : new HidPpBatteryProvider()));
     }
 
     private static void OpenInNotepad(string file) =>
