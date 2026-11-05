@@ -1,72 +1,97 @@
 # Logitech Battery Indicator
 
-Windows tray app showing the battery level of a Logitech PRO X2 SUPERSTRIKE mouse (C# / .NET 10, WinForms, HID++).
+A small Windows tray app that shows the battery level of a **Logitech PRO X2 SUPERSTRIKE** mouse, without Logitech G HUB.
 
-The tray icon shows the mouse battery, read over HID++ via the Lightspeed receiver or the USB cable (read every 60 s, and at once when the mouse wakes, sleeps, connects or reports a battery change, or the cable or receiver is plugged in or unplugged). Diagnostics go to `%LOCALAPPDATA%\LogitechBattery\log.txt`.
+The tray icon shows the charge at a glance; hover it for the exact percentage. The app reads the mouse directly over Logitech's HID++ protocol, through the Lightspeed receiver or the USB cable.
 
-The app shows a Windows notification when the battery drops to 15 % ("low") and again at 5 % ("critical"), once per discharge, and when it finishes charging ("fully charged").
+> Not affiliated with or endorsed by Logitech. "Logitech" and "PRO X2 SUPERSTRIKE" are trademarks of Logitech.
 
-"Start with Windows" in the tray menu is on by default and can be unticked at any time. It is stored in the per-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` key, no admin rights needed.
+## Features
 
-`LogitechBattery.exe --mock` starts with a simulated battery and a Simulator menu instead of reading the mouse.
+- **Battery in the tray** – the icon shows the level and whether the mouse is charging; the tooltip shows the exact percentage.
+- **Instant updates** – the tray changes within about a second when the mouse sleeps, wakes, is switched off or on, or when the receiver or cable is plugged in or out.
+- **Notifications** – a Windows notification when the battery is low (15 %), critical (5 %) and fully charged.
+- **Start with Windows** – on by default, can be switched off in the tray menu. No admin rights needed.
+- **Lightweight and private** – no installer, no background service, no account, no telemetry and no network access. Everything stays on your PC.
 
-Third-party notices (battery icons, HidSharp): [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Coming in the next release (0.5.0):
 
-## Build locally
+- **History panel** – left-click the tray icon for a 24 h / 7 day graph of the battery level and the time of the last charge.
+- **Time left** – an estimate of the hours left, based on how fast the battery drained over the last week.
 
-Development is on macOS; the app builds there but only runs on Windows.
+## Requirements
+
+- Windows, 64-bit.
+- A Logitech PRO X2 SUPERSTRIKE mouse, connected through its Lightspeed receiver or the USB cable. Other Logitech devices are not supported yet.
+
+No .NET installation is needed: the app is a single self-contained `.exe`.
+
+## Install
+
+1. Download `LogitechBattery.exe` from the [latest release](https://github.com/fedemarco/logitech-battery-indicator/releases/latest).
+2. Move it to a permanent folder, for example `%LOCALAPPDATA%\LogitechBattery`. "Start with Windows" remembers this location.
+3. Run it. The battery icon appears in the tray (you may need to drag it out of the overflow area to keep it visible).
+
+The exe is not code-signed, so Windows SmartScreen may warn the first time. Click **More info → Run anyway**.
+
+To update, exit the app from the tray menu, replace the exe with the new version and start it again.
+
+## Usage
+
+| Action | Result |
+|---|---|
+| Hover the tray icon | Status, exact percentage and app version |
+| Right-click the tray icon | Menu: Start with Windows, Exit |
+
+Icon colors: green from 40 %, yellow from 20 %, red below 20 %. A separate "unknown" icon means the mouse is asleep, switched off or not found.
+
+## Privacy and data
+
+The app never connects to the internet. It only stores:
+
+- `%LOCALAPPDATA%\LogitechBattery\log.txt` – a small diagnostic log (rotated, at most about 512 KB).
+- `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` – the "Start with Windows" entry, only while that option is on.
+- `HKCU\Software\LogitechBattery` – remembers that the first-run "Start with Windows" default was applied.
+
+## Uninstall
+
+1. Untick **Start with Windows** in the tray menu, then choose **Exit**.
+2. Delete the exe and the folder `%LOCALAPPDATA%\LogitechBattery`.
+3. Optionally delete the registry key `HKCU\Software\LogitechBattery`.
+
+## Troubleshooting
+
+If the tray shows "Mouse not found" while the mouse works, wake it (move it) and wait a few seconds. If it stays that way, these options help to find the cause. Run them from PowerShell in the folder of the exe:
+
+```powershell
+.\LogitechBattery.exe --probe    # lists the Logitech devices and what they report (probe.txt)
+.\LogitechBattery.exe --listen   # records the messages from the mouse and receiver until you click OK (listen.txt)
+.\LogitechBattery.exe --mock     # runs with a simulated battery, to check the tray and notifications
+```
+
+The reports and `log.txt` are written to `%LOCALAPPDATA%\LogitechBattery`. Please attach them when you [open an issue](https://github.com/fedemarco/logitech-battery-indicator/issues).
+
+Not tested yet: running at the same time as Logitech G HUB or Logi Options+.
+
+## Roadmap
+
+- History panel and time-left estimate (0.5.0).
+- More Logitech devices, with a choice of which one the tray shows.
+- Settings, such as the notification levels.
+- Automatic updates.
+
+## Building from source
+
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download). The app runs only on Windows, but it builds and its tests run on any OS.
 
 ```sh
 dotnet build
-dotnet publish src/LogitechBattery.App -c Release   # self-contained single-file win-x64 exe
+dotnet test
+dotnet publish src/LogitechBattery.App -c Release -o out   # self-contained LogitechBattery.exe for win-x64
 ```
 
-## CI
+Every push to `main` builds a development exe in GitHub Actions; a `vX.Y.Z` tag creates a release.
 
-`.github/workflows/build.yml` runs on GitHub (ubuntu):
+## Credits
 
-- Every push to `main`: builds a dev exe (`<version>-dev.<run>+<sha>`), uploaded as artifact `LogitechBattery-win-x64` (kept 1 day).
-- Pushing a `vX.Y.Z` tag: builds that version and creates a GitHub Release with `LogitechBattery.exe` and `THIRD-PARTY-NOTICES.md`. Releases are created only this way.
-
-## Install / update on the Windows PC
-
-One-time setup:
-
-```powershell
-winget install GitHub.cli
-gh auth login
-gh api repos/fedemarco/logitech-battery-indicator/contents/scripts/update.ps1 -H "Accept: application/vnd.github.raw" > update.ps1
-```
-
-Then, to install or update (stops the running app, installs to `%LOCALAPPDATA%\LogitechBattery`, starts it):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File update.ps1            # latest dev build
-powershell -ExecutionPolicy Bypass -File update.ps1 -Release   # latest release
-```
-
-## Probe (HID++ discovery)
-
-`--probe` sends read-only HID++ queries to attached Logitech devices and writes `%LOCALAPPDATA%\LogitechBattery\probe.txt` (opened in Notepad). It runs even while the tray app is running. Run it once with the mouse on the Lightspeed receiver and once with the USB cable, then send back `probe.txt` (rename the second one, e.g. `probe-cable.txt`, before running again):
-
-```powershell
-& "$env:LOCALAPPDATA\LogitechBattery\LogitechBattery.exe" --probe
-```
-
-(cmd: `"%LOCALAPPDATA%\LogitechBattery\LogitechBattery.exe" --probe`). Wake the mouse (move it) first.
-
-## Listen (HID++ notifications)
-
-`--listen` keeps the Logitech HID++ collections open and logs every report they deliver, with timestamps, until you click OK; it reopens them after USB changes. The only request it sends is a read of the receiver's notification flags. The report goes to `%LOCALAPPDATA%\LogitechBattery\listen.txt` (opened in Notepad). Leave the tray app running: its own requests and their answers show up in the log too.
-
-```powershell
-& "$env:LOCALAPPDATA\LogitechBattery\LogitechBattery.exe" --listen
-```
-
-## Cutting a release
-
-Bump `VersionPrefix` in `Directory.Build.props` if needed, then:
-
-```sh
-git tag vX.Y.Z && git push origin vX.Y.Z
-```
+Battery icons from [razer-taskbar](https://github.com/sanraith/razer-taskbar) (MIT), HID access through [HidSharp](https://www.nuget.org/packages/HidSharp) (Apache 2.0). See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

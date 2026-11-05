@@ -1,6 +1,6 @@
 # Third-party notices
 
-## Battery icons (`src/LogitechBattery/Assets/`)
+## Battery icons (`src/LogitechBattery.App/Assets/`)
 
 Source: https://github.com/sanraith/razer-taskbar (`src/assets/`)
 
