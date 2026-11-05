@@ -57,6 +57,15 @@ public class BatteryAlertsTests
                 TestStatus.Reading(ConnectionState.NotFound, 90, ChargingState.Charging),
                 Discharging(10)));
 
+    // Guards the coupling "low level < new-cycle level" for configurable thresholds.
+    [Fact]
+    public void Discharging_from_100_down_to_25_percent_never_alerts()
+    {
+        var readings = Enumerable.Range(25, 76).Reverse().Select(Discharging).ToArray();
+
+        Assert.All(AlertsFor(readings), alert => Assert.Null(alert));
+    }
+
     [Fact]
     public void Charging_at_3_percent_is_quiet() =>
         Assert.Equal([Quiet], AlertsFor(Charging(3)));
