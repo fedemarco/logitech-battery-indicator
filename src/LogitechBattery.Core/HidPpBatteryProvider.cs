@@ -62,7 +62,8 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         {
             try
             {
-                return ReadCore(retry: true, ct);
+                // A lost device is followed by one immediate rediscovery (e.g. cable unplugged while the receiver is still there).
+                return ReadCore(ct) ?? ReadCore(ct) ?? NoReading(ConnectionState.NotFound, DateTimeOffset.Now);
             }
             catch (Exception ex)
             {
@@ -72,24 +73,33 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         }
     }
 
-    private BatteryStatus ReadCore(bool retry, CancellationToken ct)
+    /// <summary>One read attempt; null if the device was lost during it.</summary>
+    private BatteryStatus? ReadCore(CancellationToken ct)
     {
         var now = DateTimeOffset.Now;
         if (_rediscover || _channels.Any(c => c.IsClosed))
         {
-            _rediscover = false;
             ForgetTarget();
-            RefreshChannels(ct);
+            _rediscover = false; // cleared first, so a USB event during the refresh is not lost
+            try
+            {
+                RefreshChannels(ct);
+            }
+            catch
+            {
+                _rediscover = true; // a failed refresh is retried
+                throw;
+            }
         }
 
         _target ??= Discover(ct);
         if (_target is not { } target)
             return NoReading(MissingTargetState(), now);
 
-        return ReadStatus(target, now, retry, ct);
+        return ReadStatus(target, now, ct);
     }
 
-    private BatteryStatus ReadStatus(Target target, DateTimeOffset now, bool retry, CancellationToken ct)
+    private BatteryStatus? ReadStatus(Target target, DateTimeOffset now, CancellationToken ct)
     {
         try
         {
@@ -115,19 +125,18 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         }
         catch (Exception ex) when (ex is IOException or TimeoutException)
         {
-            return Lost(target, now, retry, ct); // unplugged mid-read
+            Lost(target); // unplugged mid-read
+            return null;
         }
     }
 
-    // Rediscover once right away (e.g. cable unplugged while the receiver is still there).
-    private BatteryStatus Lost(Target target, DateTimeOffset now, bool retry, CancellationToken ct)
+    private void Lost(Target target)
     {
         AppLog.Write($"Device lost: {target.Channel.Key}");
         target.Channel.Dispose();
         _channels.Remove(target.Channel);
         ForgetTarget();
         _rediscover = true;
-        return retry ? ReadCore(retry: false, ct) : NoReading(ConnectionState.NotFound, now);
     }
 
     private void ForgetTarget() => _target = null;

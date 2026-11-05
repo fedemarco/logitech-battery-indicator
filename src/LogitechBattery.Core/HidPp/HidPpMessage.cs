@@ -25,7 +25,7 @@ internal static class HidPpMessage
     public const int HeaderLength = 4;
     public const int ParamsOffset = HeaderLength;
 
-    /// <summary>Identifies our requests in the answers (low nibble of the function byte).</summary>
+    /// <summary>Software id (low nibble of the function byte) for requests sent outside a channel, as <c>HidPpProbe</c> does. <c>HidPpChannel</c> replaces it with a rotating id, so for channel callers it is a placeholder.</summary>
     public const byte SoftwareId = 0x0A;
 
     /// <summary>Device index used on the USB cable.</summary>
@@ -73,6 +73,16 @@ internal static class HidPpMessage
         report[FunctionOffset] = FunctionAndSoftwareId(function, softwareId);
         parameters.CopyTo(report, ParamsOffset);
         return report;
+    }
+
+    /// <summary>A copy of a long request with another software id; a short (HID++ 1.0) request is returned unchanged, as its byte 3 is a register address.</summary>
+    public static byte[] WithSoftwareId(byte[] request, byte softwareId)
+    {
+        if (request[0] != LongId)
+            return request;
+        var copy = (byte[])request.Clone();
+        copy[FunctionOffset] = (byte)((request[FunctionOffset] & ~SoftwareIdMask) | (softwareId & SoftwareIdMask));
+        return copy;
     }
 
     /// <summary>Root feature, getProtocolVersion used as a ping: a HID++ 2.0 device echoes <see cref="PingEcho"/>.</summary>

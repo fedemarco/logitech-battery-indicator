@@ -16,6 +16,8 @@ internal readonly record struct HidPpAnswer(byte[]? Response, byte? ErrorCode)
 internal sealed class HidPpChannel : IDisposable
 {
     private const int StreamWriteTimeoutMs = 200;
+    private const byte FirstRotatingSoftwareId = 0x1; // 0x0 is for device events
+    private const byte LastRotatingSoftwareId = 0xE;  // 0xF is used by other Logitech software
 
     private sealed record PendingRequest(byte[] Request, TaskCompletionSource<byte[]> Reply);
 
@@ -25,6 +27,7 @@ internal sealed class HidPpChannel : IDisposable
     private readonly object _exchangeLock = new();
     private volatile PendingRequest? _pending;
     private volatile bool _closed;
+    private byte _softwareId = LastRotatingSoftwareId;
 
     public string Key { get; }
     public int ProductId { get; }
@@ -65,6 +68,8 @@ internal sealed class HidPpChannel : IDisposable
     {
         lock (_exchangeLock)
         {
+            // A fresh software id per request: a late reply to a timed-out request no longer matches the next one.
+            request = HidPpMessage.WithSoftwareId(request, NextSoftwareId());
             var pending = new PendingRequest(request, new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously));
             _pending = pending;
             try
@@ -80,6 +85,9 @@ internal sealed class HidPpChannel : IDisposable
             }
         }
     }
+
+    private byte NextSoftwareId() =>
+        _softwareId = _softwareId >= LastRotatingSoftwareId ? FirstRotatingSoftwareId : (byte)(_softwareId + 1);
 
     public void Dispose()
     {
@@ -133,6 +141,7 @@ internal sealed class HidPpChannel : IDisposable
     {
         if (_pending is { } pending && HidPpMessage.Classify(pending.Request, report).Kind != HidPpReplyKind.None)
             pending.Reply.TrySetResult(report);
-        _onReport(this, report);
+        try { _onReport(this, report); }
+        catch (Exception ex) { AppLog.Write($"HID++ report handler failed: {ex}"); } // a faulty handler must not stop the reader
     }
 }

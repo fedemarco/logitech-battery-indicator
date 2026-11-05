@@ -10,7 +10,14 @@ public class HidPpMessageTests
     // Function 1 in the high nibble, software id 0x0A in the low one.
     private const byte Function1WithSoftwareId = 0x1A;
 
+    private const byte RotatedSoftwareId = 0x03;
+    private const byte PreviousSoftwareId = 0x02;
+    private const byte Function1WithRotatedId = 0x10 | RotatedSoftwareId;
+    private const byte Function1WithPreviousId = 0x10 | PreviousSoftwareId;
+
     private static byte[] SampleRequest => HidPpMessage.BuildRequest(DeviceIndex, FeatureIndex, function: 1, HidPpMessage.SoftwareId, 0xAB);
+
+    private static byte[] RotatedRequest => HidPpMessage.WithSoftwareId(SampleRequest, RotatedSoftwareId);
 
     private static byte[] Report(params byte[] bytes)
     {
@@ -26,6 +33,25 @@ public class HidPpMessageTests
 
         Assert.Equal(20, request.Length);
         Assert.Equal([0x11, DeviceIndex, FeatureIndex, Function1WithSoftwareId, 0xAB, 0x00], request[..6]);
+    }
+
+    [Fact]
+    public void Long_request_can_get_another_software_id_without_changing_the_original()
+    {
+        var request = SampleRequest;
+
+        var changed = HidPpMessage.WithSoftwareId(request, 0x03);
+
+        Assert.Equal(0x13, changed[3]);
+        Assert.Equal(Function1WithSoftwareId, request[3]);
+    }
+
+    [Fact]
+    public void Short_request_keeps_its_register_address_when_a_software_id_is_set()
+    {
+        var request = HidPpMessage.BuildGetRegister(HidPpMessage.ReceiverIndex, register: 0x00);
+
+        Assert.Equal(request, HidPpMessage.WithSoftwareId(request, 0x03));
     }
 
     [Fact]
@@ -100,6 +126,31 @@ public class HidPpMessageTests
 
         Assert.Equal(new HidPpReply(HidPpReplyKind.Error10, 9), reply);
     }
+
+    [Fact]
+    public void Response_with_the_rotated_software_id_answers_the_rotated_request() =>
+        Assert.Equal(HidPpReplyKind.Response,
+            HidPpMessage.Classify(RotatedRequest, Report(0x11, DeviceIndex, FeatureIndex, Function1WithRotatedId, 0x55)).Kind);
+
+    [Fact]
+    public void Late_reply_with_the_previous_software_id_does_not_answer_the_rotated_request() =>
+        Assert.Equal(HidPpReplyKind.None,
+            HidPpMessage.Classify(RotatedRequest, Report(0x11, DeviceIndex, FeatureIndex, Function1WithPreviousId, 0x55)).Kind);
+
+    [Fact]
+    public void Hidpp2_error_echoing_the_rotated_software_id_answers_the_rotated_request() =>
+        Assert.Equal(new HidPpReply(HidPpReplyKind.Error20, 2),
+            HidPpMessage.Classify(RotatedRequest, Report(0x11, DeviceIndex, 0xFF, FeatureIndex, Function1WithRotatedId, 0x02)));
+
+    [Fact]
+    public void Hidpp1_error_echoing_the_rotated_software_id_answers_the_rotated_request() =>
+        Assert.Equal(new HidPpReply(HidPpReplyKind.Error10, 9),
+            HidPpMessage.Classify(RotatedRequest, [0x10, DeviceIndex, 0x8F, FeatureIndex, Function1WithRotatedId, 0x09, 0x00]));
+
+    [Fact]
+    public void Event_with_software_id_0_never_answers_a_request() =>
+        Assert.Equal(HidPpReplyKind.None,
+            HidPpMessage.Classify(RotatedRequest, Report(0x11, DeviceIndex, FeatureIndex, 0x10, 0x55)).Kind);
 
     [Theory]
     [InlineData(0x11, 0x02, 0x04, 0x1A)] // other device
