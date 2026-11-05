@@ -25,6 +25,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private readonly IBatteryProvider _provider;
     private readonly BatteryAlerts _alerts = new();
+    private readonly BatteryHistory? _history;
     private readonly NotifyIcon _notifyIcon;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly System.Windows.Forms.Timer _followUp = new();
@@ -36,9 +37,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private bool _refreshing;
     private bool _exited;
 
-    public TrayApplicationContext(IBatteryProvider provider)
+    public TrayApplicationContext(IBatteryProvider provider, BatteryHistory? history)
     {
         _provider = provider;
+        _history = history;
         if (SynchronizationContext.Current is WindowsFormsSynchronizationContext ui)
             _ui = ui; // otherwise captured on the first idle
 
@@ -56,6 +58,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
             var startItem = BuildStartupItem();
             menu.Opening += (_, _) => startItem.Checked = AutoStart.IsEnabled();
             menu.Items.Add(startItem);
+            if (history is not null)
+                menu.Items.Add(BuildClearHistoryItem(history));
             pollIntervalMs = PollIntervalMs;
         }
         menu.Items.Add("Exit", null, (_, _) => ExitApp());
@@ -105,6 +109,27 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 AutoStart.Enable(); // also rewrites a stale path and clears a Task Manager "disabled"
         };
         return startItem;
+    }
+
+    private static ToolStripMenuItem BuildClearHistoryItem(BatteryHistory history)
+    {
+        var clearItem = new ToolStripMenuItem("Clear history…");
+        clearItem.Click += (_, _) =>
+        {
+            var answer = MessageBox.Show(
+                "Delete all battery history? This cannot be undone.",
+                "Logitech Battery",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (answer == DialogResult.Yes && !history.Clear())
+                MessageBox.Show(
+                    "Couldn't delete the battery history. Close any program that has history.csv open and try again.",
+                    "Logitech Battery",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+        };
+        return clearItem;
     }
 
     private System.Windows.Forms.Timer StartPollTimer(int intervalMs)
@@ -170,6 +195,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             status = await _provider.ReadAsync();
             statusLine = status.ToDisplayString();
+            _history?.Record(status);
         }
         catch (Exception)
         {

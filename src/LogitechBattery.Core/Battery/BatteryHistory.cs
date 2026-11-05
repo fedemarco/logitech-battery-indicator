@@ -1,0 +1,171 @@
+using System.Globalization;
+
+namespace LogitechBattery.Battery;
+
+/// <summary>
+/// Append-only CSV of battery readings, one line per change plus a heartbeat.
+/// History is not critical: IO errors are logged and swallowed.
+/// </summary>
+public sealed class BatteryHistory(string path)
+{
+    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(15);
+    private const string TimeFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'";
+
+    private HistoryRecord? _last;
+    private bool _lastLoaded;
+
+    public void Record(BatteryStatus status) => Guard(nameof(Record), () =>
+    {
+        var record = new HistoryRecord(status.ReadAt.ToUniversalTime(), status.Percent, status.Charging, status.Connection);
+        if (!NeedsWriting(record))
+            return;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        var separator = EndsWithPartialLine() ? Environment.NewLine : "";
+        File.AppendAllText(path, separator + Format(record) + Environment.NewLine);
+        _last = record;
+    });
+
+    public IReadOnlyList<HistoryRecord> ReadSince(DateTimeOffset since)
+    {
+        try
+        {
+            return ReadAll().Where(record => record.Time >= since).ToList();
+        }
+        catch (Exception ex)
+        {
+            LogFailure(nameof(ReadSince), ex);
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Drops records older than <paramref name="age"/> before the newest record that is not after <paramref name="now"/>,
+    /// so a record dated in the future (wrong clock) cannot wipe the history.
+    /// </summary>
+    public void PruneOlderThan(TimeSpan age, DateTimeOffset now) => Guard(nameof(PruneOlderThan), () =>
+    {
+        var all = ReadAll();
+        var pastRecords = all.Where(record => record.Time <= now).ToList();
+        if (pastRecords.Count == 0)
+            return;
+
+        var cutoff = pastRecords.Max(record => record.Time) - age;
+        var kept = all.Where(record => record.Time >= cutoff).ToList();
+        if (kept.Count == all.Count)
+            return;
+
+        var tempPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!, Path.GetRandomFileName());
+        try
+        {
+            File.WriteAllLines(tempPath, kept.Select(Format));
+            File.Move(tempPath, path, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(tempPath); // no-op after a successful move
+        }
+    });
+
+    /// <summary>Returns true when the file is gone afterwards (deleted, or there was none).</summary>
+    public bool Clear()
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // the data folder does not exist yet, so there is no file either
+        }
+        catch (Exception ex)
+        {
+            LogFailure(nameof(Clear), ex);
+            return false;
+        }
+        _last = null;
+        _lastLoaded = true; // the file is gone, nothing to load
+        return true;
+    }
+
+    private bool NeedsWriting(HistoryRecord record)
+    {
+        if (!_lastLoaded)
+        {
+            _last = ReadAll().LastOrDefault();
+            _lastLoaded = true;
+        }
+        return _last is null
+            || record.Percent != _last.Percent
+            || record.Charging != _last.Charging
+            || record.Connection != _last.Connection
+            || IsHeartbeatDue(record.Time - _last.Time);
+    }
+
+    // A negative delta means the clock moved back; waiting for it to catch up would leave a long gap.
+    private static bool IsHeartbeatDue(TimeSpan sinceLastRecord) =>
+        sinceLastRecord < TimeSpan.Zero || sinceLastRecord >= HeartbeatInterval;
+
+    private bool EndsWithPartialLine()
+    {
+        if (!File.Exists(path))
+            return false;
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        if (stream.Length == 0)
+            return false;
+        stream.Seek(-1, SeekOrigin.End);
+        return stream.ReadByte() != '\n';
+    }
+
+    private List<HistoryRecord> ReadAll() =>
+        File.Exists(path)
+            ? File.ReadLines(path).Select(TryParse).OfType<HistoryRecord>().ToList()
+            : [];
+
+    private static string Format(HistoryRecord record) =>
+        string.Join(',',
+            record.Time.UtcDateTime.ToString(TimeFormat, CultureInfo.InvariantCulture),
+            record.Percent?.ToString(CultureInfo.InvariantCulture) ?? "",
+            record.Charging,
+            record.Connection);
+
+    private static HistoryRecord? TryParse(string line)
+    {
+        var fields = line.Split(',');
+        if (fields.Length != 4
+            || !DateTimeOffset.TryParseExact(fields[0], TimeFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var time)
+            || !TryParseDefinedEnum(fields[2], out ChargingState charging)
+            || !TryParseDefinedEnum(fields[3], out ConnectionState connection))
+            return null;
+
+        if (fields[1].Length == 0)
+            return new HistoryRecord(time, null, charging, connection);
+        return int.TryParse(fields[1], NumberStyles.None, CultureInfo.InvariantCulture, out var percent) && percent <= 100
+            ? new HistoryRecord(time, percent, charging, connection)
+            : null;
+    }
+
+    private static bool TryParseDefinedEnum<T>(string text, out T value) where T : struct, Enum
+    {
+        value = default;
+        if (!Enum.IsDefined(typeof(T), text))
+            return false;
+        value = Enum.Parse<T>(text);
+        return true;
+    }
+
+    private static void LogFailure(string operation, Exception ex) =>
+        AppLog.Write($"Battery history {operation} failed: {ex.Message}");
+
+    private static void Guard(string operation, Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            LogFailure(operation, ex);
+        }
+    }
+}

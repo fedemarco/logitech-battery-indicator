@@ -6,6 +6,8 @@ namespace LogitechBattery;
 
 internal static class Program
 {
+    private static readonly TimeSpan HistoryRetention = TimeSpan.FromDays(365);
+
     [STAThread]
     private static void Main(string[] args)
     {
@@ -32,7 +34,16 @@ internal static class Program
         var version = AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()) ?? "unknown";
         var mode = useMock ? "mock" : "HID++";
         AppLog.Write($"Started LogitechBattery {version} ({mode})");
-        Application.Run(new TrayApplicationContext(useMock ? new MockBatteryProvider() : new HidPpBatteryProvider()));
+        Application.Run(useMock
+            ? new TrayApplicationContext(new MockBatteryProvider(), history: null) // simulated readings must never reach the real file
+            : new TrayApplicationContext(new HidPpBatteryProvider(), OpenHistory()));
+    }
+
+    private static BatteryHistory OpenHistory()
+    {
+        var history = new BatteryHistory(Path.Combine(AppPaths.DataDirectory, "history.csv"));
+        history.PruneOlderThan(HistoryRetention, DateTimeOffset.Now);
+        return history;
     }
 
     private static void OpenInNotepad(string file) =>
