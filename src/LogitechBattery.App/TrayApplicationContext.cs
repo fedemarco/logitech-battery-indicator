@@ -20,7 +20,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private const int MockPollIntervalMs = 1000;
     private const int PollIntervalMs = 60_000;
     private const int BalloonTimeoutMs = 10_000;
-    private const int MaxTooltipLength = 63;
+    private const int MaxTooltipLength = 127; // NotifyIcon.MaxTextSize in dotnet/winforms (szTip holds 128 with the terminator)
     private const int ShortShaLength = 7;
 
     private readonly IBatteryProvider _provider;
@@ -34,6 +34,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly int _iconSize = SystemInformation.SmallIconSize.Width;
     private Icon? _icon;
     private TrayIndicator? _indicator;
+    private double? _drainPercentPerDay;
     private bool _refreshing;
     private bool _exited;
 
@@ -67,11 +68,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon = new NotifyIcon
         {
             Icon = SystemIcons.Application, // replaced by the first refresh
-            Text = BuildTooltip(null),
+            Text = BuildTooltip(null, null),
             ContextMenuStrip = menu,
             Visible = true,
         };
 
+        RecomputeDrainRate();
         _timer = StartPollTimer(pollIntervalMs);
         _followUp.Tick += OnFollowUpTickAsync;
         if (provider is HidPpBatteryProvider hid)
@@ -111,7 +113,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         return startItem;
     }
 
-    private static ToolStripMenuItem BuildClearHistoryItem(BatteryHistory history)
+    private ToolStripMenuItem BuildClearHistoryItem(BatteryHistory history)
     {
         var clearItem = new ToolStripMenuItem("Clear history…");
         clearItem.Click += (_, _) =>
@@ -122,7 +124,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning,
                 MessageBoxDefaultButton.Button2);
-            if (answer == DialogResult.Yes && !history.Clear())
+            if (answer != DialogResult.Yes)
+                return;
+
+            var cleared = history.Clear();
+            if (cleared)
+                _drainPercentPerDay = null;
+            else
                 MessageBox.Show(
                     "Couldn't delete the battery history. Close any program that has history.csv open and try again.",
                     "Logitech Battery",
@@ -195,7 +203,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             status = await _provider.ReadAsync();
             statusLine = status.ToDisplayString();
-            _history?.Record(status);
+            if (_history?.Record(status) == true)
+                RecomputeDrainRate();
         }
         catch (Exception)
         {
@@ -216,7 +225,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         try
         {
-            _notifyIcon.Text = BuildTooltip(statusLine);
+            _notifyIcon.Text = BuildTooltip(statusLine, status is null ? null : RemainingTime.RemainingText(status, _drainPercentPerDay));
 
             var indicator = TrayIndicator.From(status);
             if (indicator != _indicator)
@@ -253,11 +262,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon.ShowBalloonTip(BalloonTimeoutMs, title, text, icon);
     }
 
-    private static string BuildTooltip(string? statusLine)
+    private void RecomputeDrainRate()
+    {
+        if (_history is null)
+            return;
+
+        var now = DateTimeOffset.UtcNow;
+        _drainPercentPerDay = RemainingTime.DrainPercentPerDay(_history.ReadSince(now - RemainingTime.Window), now);
+    }
+
+    private static string BuildTooltip(string? statusLine, string? remainingText)
     {
         var version = DisplayVersion(AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()));
-        var text = statusLine is null ? $"Logitech Battery {version}" : $"{statusLine}\nLogitech Battery {version}";
-        // Safety cap: classic NotifyIcon.Text limit is 63 characters (longer throws).
+        var lines = new[] { statusLine, remainingText, $"Logitech Battery {version}" }.OfType<string>();
+        var text = string.Join('\n', lines);
+        // Guard: a longer text makes NotifyIcon.Text throw.
         return text.Length > MaxTooltipLength ? text[..MaxTooltipLength] : text;
     }
 

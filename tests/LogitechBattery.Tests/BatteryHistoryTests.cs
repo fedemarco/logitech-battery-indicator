@@ -25,6 +25,31 @@ public sealed class BatteryHistoryTests : IDisposable
     private string[] Lines() => File.Exists(FilePath) ? File.ReadAllLines(FilePath) : [];
 
     [Fact]
+    public void Record_returns_true_when_it_wrote_a_line()
+    {
+        Assert.True(new BatteryHistory(FilePath).Record(Reading()));
+    }
+
+    [Fact]
+    public void Record_returns_false_for_an_unchanged_reading()
+    {
+        var history = new BatteryHistory(FilePath);
+        history.Record(Reading());
+
+        Assert.False(history.Record(Reading(after: TimeSpan.FromMinutes(1))));
+    }
+
+    [Fact]
+    public void Record_returns_false_without_throwing_when_the_write_fails()
+    {
+        Directory.CreateDirectory(_folder);
+        var blocker = Path.Combine(_folder, "blocker");
+        File.WriteAllText(blocker, "a file, not a folder");
+
+        Assert.False(new BatteryHistory(Path.Combine(blocker, "history.csv")).Record(Reading()));
+    }
+
+    [Fact]
     public void First_reading_writes_a_line()
     {
         new BatteryHistory(FilePath).Record(Reading());

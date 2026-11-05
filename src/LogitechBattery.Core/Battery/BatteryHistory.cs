@@ -14,17 +14,27 @@ public sealed class BatteryHistory(string path)
     private HistoryRecord? _last;
     private bool _lastLoaded;
 
-    public void Record(BatteryStatus status) => Guard(nameof(Record), () =>
+    /// <summary>Returns true when a new line was written.</summary>
+    public bool Record(BatteryStatus status)
     {
-        var record = new HistoryRecord(status.ReadAt.ToUniversalTime(), status.Percent, status.Charging, status.Connection);
-        if (!NeedsWriting(record))
-            return;
+        try
+        {
+            var record = new HistoryRecord(status.ReadAt.ToUniversalTime(), status.Percent, status.Charging, status.Connection);
+            if (!NeedsWriting(record))
+                return false;
 
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        var separator = EndsWithPartialLine() ? Environment.NewLine : "";
-        File.AppendAllText(path, separator + Format(record) + Environment.NewLine);
-        _last = record;
-    });
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            var separator = EndsWithPartialLine() ? Environment.NewLine : "";
+            File.AppendAllText(path, separator + Format(record) + Environment.NewLine);
+            _last = record;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LogFailure(nameof(Record), ex);
+            return false;
+        }
+    }
 
     public IReadOnlyList<HistoryRecord> ReadSince(DateTimeOffset since)
     {
