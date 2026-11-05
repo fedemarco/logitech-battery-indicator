@@ -30,6 +30,8 @@ internal static class Program
             return;
 
         ApplicationConfiguration.Initialize();
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) => AppLog.Write($"Unhandled UI exception: {e.Exception}"); // keep the tray app running
         var useMock = args.Contains("--mock");
         var version = AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()) ?? "unknown";
         var mode = useMock ? "mock" : "HID++";

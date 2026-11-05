@@ -17,6 +17,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         ("Not found", MockMode.NotFound),
     ];
 
+    private const long ReopenGuardMs = 300; // focus loss closes the panel just before the tray click that caused it arrives
     private const int MockPollIntervalMs = 1000;
     private const int PollIntervalMs = 60_000;
     private const int BalloonTimeoutMs = 10_000;
@@ -35,6 +36,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private Icon? _icon;
     private TrayIndicator? _indicator;
     private double? _drainPercentPerDay;
+    private OverlayForm? _overlay;
+    private long? _overlayClosedAtMs;
+    private BatteryStatus? _status;
+    private string _statusLine = "";
     private bool _refreshing;
     private bool _exited;
 
@@ -72,6 +77,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
             ContextMenuStrip = menu,
             Visible = true,
         };
+
+        _notifyIcon.MouseClick += OnTrayClick;
 
         RecomputeDrainRate();
         _timer = StartPollTimer(pollIntervalMs);
@@ -204,7 +211,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
             status = await _provider.ReadAsync();
             statusLine = status.ToDisplayString();
             if (_history?.Record(status) == true)
+            {
                 RecomputeDrainRate();
+                if (!_exited)
+                    _overlay?.ReloadHistory();
+            }
         }
         catch (Exception)
         {
@@ -223,8 +234,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void UpdateTray(BatteryStatus? status, string statusLine)
     {
+        _status = status;
+        _statusLine = statusLine;
         try
         {
+            _overlay?.SetStatus(status, statusLine, _drainPercentPerDay);
             _notifyIcon.Text = BuildTooltip(statusLine, status is null ? null : RemainingTime.RemainingText(status, _drainPercentPerDay));
 
             var indicator = TrayIndicator.From(status);
@@ -238,6 +252,32 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             AppLog.Write($"Tray update failed: {ex}"); // keep the previous icon
         }
+    }
+
+    private bool OverlayJustClosed() =>
+        _overlayClosedAtMs is { } closedAt && Environment.TickCount64 - closedAt < ReopenGuardMs;
+
+    private void OnTrayClick(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left)
+            return;
+        if (_overlay is not null)
+        {
+            _overlay.Close();
+            return;
+        }
+        if (OverlayJustClosed())
+            return;
+
+        var overlay = new OverlayForm(_history);
+        overlay.SetStatus(_status, _statusLine, _drainPercentPerDay);
+        overlay.FormClosed += (_, _) =>
+        {
+            _overlay = null;
+            _overlayClosedAtMs = Environment.TickCount64;
+        };
+        _overlay = overlay;
+        overlay.Show();
     }
 
     private void ReplaceIcon(TrayIndicator indicator)
@@ -301,6 +341,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _exited = true;
         if (_provider is HidPpBatteryProvider hid)
             hid.ChangeDetected -= OnChangeDetected;
+        _overlay?.Dispose();
+        _overlay = null;
         _timer.Stop();
         _timer.Dispose();
         _followUp.Stop();
