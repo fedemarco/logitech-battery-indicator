@@ -95,3 +95,7 @@ Every push to `main` builds a development exe in GitHub Actions; a `vX.Y.Z` tag 
 ## Credits
 
 Battery icons from [razer-taskbar](https://github.com/sanraith/razer-taskbar) (MIT), HID access through [HidSharp](https://www.nuget.org/packages/HidSharp) (Apache 2.0). See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+## License
+
+[MIT](LICENSE) © 2026 Federico Marco. Third-party components keep their own licenses (see above).
