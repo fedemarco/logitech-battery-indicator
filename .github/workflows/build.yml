@@ -14,6 +14,16 @@ permissions:
   contents: read
 
 jobs:
+  # Every run: the tests on Windows too, where file sharing, paths and line endings behave as on the user's PC.
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test
+
   # Pushes to main / manual runs: unversioned dev build (<VersionPrefix>-dev.<run>+<sha>).
   dev:
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
@@ -34,6 +44,7 @@ jobs:
   # Tag pushes (vX.Y.Z): versioned build attached to a GitHub Release.
   release:
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: test-windows # never release a build whose tests fail on Windows
     runs-on: ubuntu-latest
     permissions:
       contents: write
