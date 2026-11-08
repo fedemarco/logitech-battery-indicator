@@ -6,7 +6,7 @@ The tray icon shows the charge at a glance; hover it for the exact percentage. T
 
 ![Tray icon with its tooltip: battery percentage and state, and the app version](docs/tray-tooltip.png)
 
-> Not affiliated with or endorsed by Logitech. "Logitech" and "PRO X2 SUPERSTRIKE" are trademarks of Logitech.
+> Not affiliated with or endorsed by Logitech. Logitech, Logitech G, G HUB, Lightspeed, Logi Options+ and PRO X2 SUPERSTRIKE are trademarks of Logitech.
 
 ## Features
 
@@ -37,6 +37,8 @@ The exe is not code-signed, so Windows SmartScreen may warn the first time. Clic
 
 To update, exit the app from the tray menu, replace the exe with the new version and start it again.
 
+What's new: see the [releases](https://github.com/fedemarco/logitech-battery-indicator/releases).
+
 ## Usage
 
 | Action | Result |
@@ -51,9 +53,10 @@ Icon colors: green from 40 %, yellow from 20 %, red below 20 %. A separate "unkn
 
 ## Privacy and data
 
-The app never connects to the internet. It only stores:
+No telemetry. The app sends no data to any server and never connects to the internet. It only stores:
 
-- `%LOCALAPPDATA%\LogitechBattery\log.txt` – a small diagnostic log (rotated, at most about 512 KB).
+- `%LOCALAPPDATA%\LogitechBattery\log.txt` and `log.old.txt` – a small diagnostic log (rotated, at most about 512 KB). Paths under your user folder are shown as `%USERPROFILE%`.
+- `%LOCALAPPDATA%\LogitechBattery\probe.txt` and `listen.txt` – the reports of `--probe` and `--listen`, only when you run those options.
 - `%LOCALAPPDATA%\LogitechBattery\history.csv` – the battery history behind the graph and the time-left estimate (kept for one year; **Clear history…** deletes it).
 - `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` – the "Start with Windows" entry, only while that option is on.
 - `HKCU\Software\LogitechBattery` – remembers that the first-run "Start with Windows" default was applied.
