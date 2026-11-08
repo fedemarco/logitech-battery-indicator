@@ -91,8 +91,7 @@ internal sealed class OverlayForm : Form
     {
         base.OnLoad(e);
         ClientSize = new Size((int)(LogicalWidth * DpiScale), (int)(LogicalHeight * DpiScale));
-        var screen = TargetScreen();
-        Location = OverlayPlacement.Location(screen.Bounds, screen.WorkingArea, Size, DpiScale);
+        Location = OverlayPlacement.Location(TargetScreen().WorkingArea, Taskbar.Find(), Size, DpiScale);
     }
 
     protected override void OnShown(EventArgs e)

@@ -2,24 +2,35 @@ using System.Drawing;
 
 namespace LogitechBattery;
 
-/// <summary>Where the overlay panel opens: the bottom-right corner of the screen, clear of a bottom taskbar.</summary>
+/// <summary>The screen edge the taskbar is docked to, in the order of the Windows ABE_* values.</summary>
+public enum TaskbarEdge { Left, Top, Right, Bottom }
+
+public sealed record TaskbarPosition(Rectangle Bounds, TaskbarEdge Edge);
+
+/// <summary>Where the overlay panel opens: the bottom-right corner of the working area, clear of the taskbar.</summary>
 public static class OverlayPlacement
 {
     private const int Margin = 8;
 
-    // An auto-hidden taskbar reserves no space, so the working area reaches the screen bottom and the taskbar slides up over the panel.
-    // shortcut: assumes a bottom taskbar 48 logical px high (Windows 11 default). A monitor without a taskbar, or a Windows 10
-    // taskbar on another edge, also gets the lift (cosmetic: the panel floats higher). Read the real position with
-    // SHAppBarMessage(ABM_GETTASKBARPOS) if that matters.
-    private const int AutoHiddenTaskbarHeight = 48;
-
-    public static Point Location(Rectangle screenBounds, Rectangle workingArea, Size panel, float dpiScale)
+    public static Point Location(Rectangle workingArea, TaskbarPosition? taskbar, Size panel, float dpiScale)
     {
-        var bottom = workingArea.Bottom;
-        if (bottom == screenBounds.Bottom)
-            bottom -= (int)(AutoHiddenTaskbarHeight * dpiScale);
-
+        var corner = UncoveredCorner(workingArea, taskbar);
         var margin = (int)(Margin * dpiScale);
-        return new Point(workingArea.Right - panel.Width - margin, bottom - panel.Height - margin);
+        return new Point(corner.X - panel.Width - margin, corner.Y - panel.Height - margin);
+    }
+
+    // A visible taskbar is already outside the working area. An auto-hidden one reserves no space and slides over the
+    // working area, so the panel must keep clear of it. A taskbar on another monitor does not overlap this working area.
+    private static Point UncoveredCorner(Rectangle workingArea, TaskbarPosition? taskbar)
+    {
+        var corner = new Point(workingArea.Right, workingArea.Bottom);
+        if (taskbar is null || !taskbar.Bounds.IntersectsWith(workingArea))
+            return corner;
+
+        if (taskbar.Edge == TaskbarEdge.Bottom)
+            corner.Y = Math.Min(corner.Y, taskbar.Bounds.Top);
+        if (taskbar.Edge == TaskbarEdge.Right)
+            corner.X = Math.Min(corner.X, taskbar.Bounds.Left);
+        return corner;
     }
 }
