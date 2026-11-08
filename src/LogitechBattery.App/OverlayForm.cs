@@ -8,7 +8,6 @@ internal sealed class OverlayForm : Form
 {
     private const int LogicalWidth = 360;
     private const int LogicalHeight = 260;
-    private const int ScreenMargin = 8;
     private static readonly TimeSpan LastChargeLookBack = TimeSpan.FromDays(365);
 
     private static readonly Color Background = ColorTranslator.FromHtml("#202020");
@@ -42,7 +41,7 @@ internal sealed class OverlayForm : Form
         AutoScaleMode = AutoScaleMode.None; // sizes are scaled by hand
         BackColor = Background;
         // Created on the monitor under the cursor, so it gets that monitor's DPI; OnLoad then sizes and places it.
-        Location = TargetWorkingArea().Location;
+        Location = TargetScreen().WorkingArea.Location;
 
         ReloadHistory();
     }
@@ -86,15 +85,14 @@ internal sealed class OverlayForm : Form
     private void UpdateLastChargeText() =>
         _lastChargeText = _history is null ? null : ChargeHistory.Describe(ChargeHistory.LastCharge(_records, DateTimeOffset.UtcNow), _status, DateTimeOffset.UtcNow, TimeZoneInfo.Local);
 
-    private static Rectangle TargetWorkingArea() => Screen.FromPoint(Cursor.Position).WorkingArea;
+    private static Screen TargetScreen() => Screen.FromPoint(Cursor.Position);
 
     protected override void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
         ClientSize = new Size((int)(LogicalWidth * DpiScale), (int)(LogicalHeight * DpiScale));
-        var area = TargetWorkingArea();
-        var margin = (int)(ScreenMargin * DpiScale);
-        Location = new Point(area.Right - Width - margin, area.Bottom - Height - margin);
+        var screen = TargetScreen();
+        Location = OverlayPlacement.Location(screen.Bounds, screen.WorkingArea, Size, DpiScale);
     }
 
     protected override void OnShown(EventArgs e)

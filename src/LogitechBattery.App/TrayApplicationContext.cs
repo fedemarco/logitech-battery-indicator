@@ -136,7 +136,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
             var cleared = history.Clear();
             if (cleared)
+            {
                 _drainPercentPerDay = null;
+                RefreshTooltip();
+            }
             else
                 MessageBox.Show(
                     "Couldn't delete the battery history. Close any program that has history.csv open and try again.",
@@ -239,7 +242,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         try
         {
             _overlay?.SetStatus(status, statusLine, _drainPercentPerDay);
-            _notifyIcon.Text = BuildTooltip(statusLine, status is null ? null : RemainingTime.RemainingText(status, _drainPercentPerDay));
+            RefreshTooltip();
 
             var indicator = TrayIndicator.From(status);
             if (indicator != _indicator)
@@ -253,6 +256,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
             AppLog.Write($"Tray update failed: {ex}"); // keep the previous icon
         }
     }
+
+    private void RefreshTooltip() =>
+        _notifyIcon.Text = BuildTooltip(_statusLine, _status is null ? null : RemainingTime.RemainingText(_status, _drainPercentPerDay));
 
     private bool OverlayJustClosed() =>
         _overlayClosedAtMs is { } closedAt && Environment.TickCount64 - closedAt < ReopenGuardMs;
