@@ -36,7 +36,7 @@ public sealed class HidPpProbe
     private void Log(string line)
     {
         lock (_log) // reports arrive on the channel's reader threads
-            _log.AppendLine(line);
+            _log.AppendLine(AppLog.Redact(line));
     }
 
     private string LogText()

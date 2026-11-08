@@ -99,6 +99,18 @@ public sealed class AppLogTests : IDisposable
         Assert.Null(Record.Exception(() => Write("while locked")));
     }
 
+    [Fact]
+    public void Write_hides_the_user_profile_folder()
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        Write($"Access to {Path.Combine(profile, "history.csv")} is denied");
+
+        var line = File.ReadAllText(LogPath);
+        Assert.DoesNotContain(profile, line);
+        Assert.Contains("%USERPROFILE%", line);
+    }
+
     [WindowsFact]
     public void Rotation_blocked_by_an_open_reader_keeps_writing_to_the_log()
     {

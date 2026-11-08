@@ -38,7 +38,7 @@ public sealed class HidPpListener
     private void Log(string line)
     {
         lock (_log)
-            _log.AppendLine($"{DateTime.Now:HH:mm:ss.fff}  {line}");
+            _log.AppendLine($"{DateTime.Now:HH:mm:ss.fff}  {AppLog.Redact(line)}");
     }
 
     private string LogText()

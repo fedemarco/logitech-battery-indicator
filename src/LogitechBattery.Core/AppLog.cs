@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace LogitechBattery;
 
@@ -9,6 +10,7 @@ public static class AppLog
     private const string RotatedFileName = "log.old.txt";
     internal const long RotateAtBytes = 256 * 1024;
     internal const long StopWritingAtBytes = 1024 * 1024; // only reached when rotation keeps failing
+    private const string ProfilePlaceholder = "%USERPROFILE%";
     private static readonly object Gate = new();
 
     public static void Write(string message) => Write(message, AppPaths.DataDirectory);
@@ -24,10 +26,26 @@ public static class AppLog
                 if (!RotateIfNeeded(file, directory))
                     return;
                 var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
-                File.AppendAllText(file, $"{timestamp}  {message}{Environment.NewLine}");
+                File.AppendAllText(file, $"{timestamp}  {Redact(message)}{Environment.NewLine}");
             }
             catch { /* logging must never break the app */ }
         }
+    }
+
+    /// <summary>
+    /// Replaces the user profile folder with %USERPROFILE%, so a log or report that is shared does not show the Windows user name.
+    /// Only the whole folder path is replaced, never the bare name.
+    /// </summary>
+    public static string Redact(string text) => Redact(text, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+
+    internal static string Redact(string text, string profileFolder)
+    {
+        var folder = profileFolder.TrimEnd('\\', '/');
+        if (folder.Length == 0)
+            return text;
+
+        // The lookahead keeps a longer folder name that starts the same (C:\Users\anna vs C:\Users\annabel) untouched.
+        return Regex.Replace(text, Regex.Escape(folder) + @"(?!\w)", ProfilePlaceholder, RegexOptions.IgnoreCase);
     }
 
     /// <summary>Moves a full log aside. Returns false when writing must stop because rotation is blocked and the file keeps growing.</summary>
