@@ -24,7 +24,7 @@ internal static class AutoStart
                 || !string.Equals(value, command, StringComparison.OrdinalIgnoreCase))
                 return false;
             using var approvedKey = Registry.CurrentUser.OpenSubKey(StartupApprovedKey);
-            return IsApprovedInStartupApps(approvedKey?.GetValue(ValueName));
+            return StartupApproval.IsApproved(approvedKey?.GetValue(ValueName));
         }
         catch (Exception ex)
         {
@@ -32,10 +32,6 @@ internal static class AutoStart
             return false;
         }
     }
-
-    // Task Manager's "Startup apps" toggle stores a binary value whose first byte is odd when the entry is disabled; no value means enabled.
-    private static bool IsApprovedInStartupApps(object? value) =>
-        value is not byte[] { Length: > 0 } flags || (flags[0] & 1) == 0;
 
     /// <summary>Writes the Run entry and clears a Task Manager "disabled" flag. Returns false on failure.</summary>
     public static bool Enable()

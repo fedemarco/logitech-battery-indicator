@@ -20,6 +20,12 @@ public sealed record HistoryChart(IReadOnlyList<ChartPoint> Points, IReadOnlyLis
     private static readonly TimeSpan MaxSolidGap = BatteryHistory.HeartbeatInterval + HeartbeatSlack;
     private static readonly TimeSpan HourTickStep = TimeSpan.FromHours(6);
 
+    /// <summary>How far along the window a time lies: 0 at its start, 1 at <paramref name="now"/>.</summary>
+    public static double WindowFraction(DateTimeOffset time, DateTimeOffset now, TimeSpan window) => (time - (now - window)) / window;
+
+    /// <summary>How high a percent lies in the plot: 0 at the bottom, 1 at 100 %.</summary>
+    public static double HeightFraction(int percent) => (double)percent / BatteryStatus.FullPercent;
+
     /// <summary>Points inside [now - window, now] in time order; records after now (clock skew) are dropped.</summary>
     public static HistoryChart Build(IEnumerable<HistoryRecord> records, DateTimeOffset now, TimeSpan window)
     {

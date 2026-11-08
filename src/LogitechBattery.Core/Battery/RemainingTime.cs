@@ -59,14 +59,27 @@ public static class RemainingTime
 
     public static string? RemainingText(BatteryStatus current, double? drainPercentPerDay)
     {
-        if (drainPercentPerDay is not { } rate
-            || current is not { Connection: ConnectionState.Connected, Charging: ChargingState.Discharging, Percent: { } percent })
+        if (drainPercentPerDay is not { } rate || DischargingPercent(current) is not { } percent)
             return null;
 
         var hours = percent / rate * TimeSpan.HoursPerDay;
         var rounded = Math.Round(hours, MidpointRounding.AwayFromZero);
         return rounded == 0 ? "Less than 1 h left" : string.Create(CultureInfo.InvariantCulture, $"{rounded} h left");
     }
+
+    /// <summary>The estimate as the panel shows it: the remaining time, "not enough data yet" while discharging without a rate, or nothing.</summary>
+    public static string EstimateText(BatteryStatus? current, double? drainPercentPerDay)
+    {
+        if (current is null)
+            return "";
+        if (RemainingText(current, drainPercentPerDay) is { } text)
+            return text;
+        return DischargingPercent(current) is null ? "" : "not enough data yet";
+    }
+
+    // The estimate only makes sense for a connected mouse that is discharging and reports its level.
+    private static int? DischargingPercent(BatteryStatus status) =>
+        status is { Connection: ConnectionState.Connected, Charging: ChargingState.Discharging, Percent: { } percent } ? percent : null;
 
     /// <summary>An unbroken stretch of discharging, from its first to its latest reading.</summary>
     private sealed record DischargeSegment(DateTimeOffset FirstTime, int FirstPercent, DateTimeOffset LastTime, int LastPercent)

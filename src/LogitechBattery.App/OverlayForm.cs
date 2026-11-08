@@ -52,7 +52,7 @@ internal sealed class OverlayForm : Form
     {
         _status = status;
         _statusLine = statusLine;
-        _estimateText = _history is null ? "" : EstimateText(status, drainPercentPerDay); // the simulator shows the status line only
+        _estimateText = _history is null ? "" : RemainingTime.EstimateText(status, drainPercentPerDay); // the simulator shows the status line only
         UpdateLastChargeText();
         Invalidate();
     }
@@ -64,16 +64,6 @@ internal sealed class OverlayForm : Form
         RebuildChart();
         UpdateLastChargeText();
         Invalidate();
-    }
-
-    private static string EstimateText(BatteryStatus? status, double? drainPercentPerDay)
-    {
-        if (status is null)
-            return "";
-        if (RemainingTime.RemainingText(status, drainPercentPerDay) is { } text)
-            return text;
-        var isDischarging = status is { Connection: ConnectionState.Connected, Charging: ChargingState.Discharging, Percent: not null };
-        return isDischarging ? "not enough data yet" : "";
     }
 
     private void RebuildChart()
@@ -187,8 +177,8 @@ internal sealed class OverlayForm : Form
         }
 
         PointF ToPixel(ChartPoint point) => new(
-            plot.Left + (float)((point.Time - (now - _window)) / _window) * plot.Width,
-            plot.Bottom - point.Percent / 100f * plot.Height);
+            plot.Left + (float)HistoryChart.WindowFraction(point.Time, now, _window) * plot.Width,
+            plot.Bottom - (float)HistoryChart.HeightFraction(point.Percent) * plot.Height);
 
         // Segments are drawn one by one, so round caps (not a line join) hide the notches at the bends.
         using var solidPen = new Pen(LineColor, 2 * DpiScale) { StartCap = LineCap.Round, EndCap = LineCap.Round };
@@ -212,7 +202,7 @@ internal sealed class OverlayForm : Form
         using var gridPen = new Pen(GridColor, 1);
         foreach (var percent in new[] { 0, 50, 100 })
         {
-            var y = plot.Bottom - percent / 100f * plot.Height;
+            var y = plot.Bottom - (float)HistoryChart.HeightFraction(percent) * plot.Height;
             g.DrawLine(gridPen, plot.Left, y, plot.Right, y);
             var label = new RectangleF(plot.Left - 36 * DpiScale, y - 8 * DpiScale, 32 * DpiScale, 16 * DpiScale);
             DrawText(g, percent.ToString(), font, SecondaryText, label, StringAlignment.Far, StringAlignment.Center);
@@ -223,7 +213,7 @@ internal sealed class OverlayForm : Form
             : HistoryChart.DayTicks(now, TimeZoneInfo.Local);
         foreach (var tick in ticks)
         {
-            var x = plot.Left + (float)((tick.Time - (now - _window)) / _window) * plot.Width;
+            var x = plot.Left + (float)HistoryChart.WindowFraction(tick.Time, now, _window) * plot.Width;
             g.DrawLine(gridPen, x, plot.Bottom, x, plot.Bottom + 4 * DpiScale);
             var label = new RectangleF(x - 20 * DpiScale, plot.Bottom + 6 * DpiScale, 40 * DpiScale, 16 * DpiScale);
             DrawText(g, tick.Label, font, SecondaryText, label, StringAlignment.Center);

@@ -145,4 +145,26 @@ public sealed class RemainingTimeTests
     [Fact]
     public void Unknown_percent_gives_no_text() =>
         Assert.Null(RemainingTime.RemainingText(Current(percent: null), 10));
+
+    [Fact]
+    public void The_panel_shows_the_remaining_time_while_discharging_with_a_rate() =>
+        Assert.Equal("96 h left", RemainingTime.EstimateText(Current(percent: 40), 10));
+
+    [Fact]
+    public void The_panel_says_not_enough_data_while_discharging_without_a_rate() =>
+        Assert.Equal("not enough data yet", RemainingTime.EstimateText(Current(), null));
+
+    [Theory]
+    [InlineData(ChargingState.Charging)]
+    [InlineData(ChargingState.Full)]
+    public void The_panel_shows_no_estimate_while_charging(ChargingState charging) =>
+        Assert.Equal("", RemainingTime.EstimateText(Current(charging: charging), null));
+
+    [Fact]
+    public void The_panel_shows_no_estimate_while_the_mouse_is_asleep() =>
+        Assert.Equal("", RemainingTime.EstimateText(Current(connection: ConnectionState.Asleep), 10));
+
+    [Fact]
+    public void The_panel_shows_no_estimate_before_the_first_reading() =>
+        Assert.Equal("", RemainingTime.EstimateText(null, 10));
 }

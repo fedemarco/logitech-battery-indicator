@@ -300,13 +300,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void ShowAlert(BatteryAlert alert, int? percent)
     {
-        var (title, text, icon) = alert switch
-        {
-            BatteryAlert.Critical => ("Mouse battery critical", $"{percent}% left.", ToolTipIcon.Warning),
-            BatteryAlert.Low => ("Mouse battery low", $"{percent}% left. Charge it soon.", ToolTipIcon.Warning),
-            BatteryAlert.Full => ("Mouse fully charged", $"{percent}%.", ToolTipIcon.Info),
-            _ => throw new ArgumentOutOfRangeException(nameof(alert), alert, null),
-        };
+        var (title, text) = BatteryAlertText.For(alert, percent);
+        var icon = alert == BatteryAlert.Full ? ToolTipIcon.Info : ToolTipIcon.Warning;
         AppLog.Write($"Notification: {title} ({percent}%)");
         _notifyIcon.ShowBalloonTip(BalloonTimeoutMs, title, text, icon);
     }

@@ -12,6 +12,25 @@ public sealed class HistoryChartTests
     private static HistoryChart Day(params HistoryRecord[] records) => HistoryChart.Build(records, Now, HistoryChart.Day);
 
     [Fact]
+    public void A_time_at_the_start_of_the_window_is_at_fraction_0() =>
+        Assert.Equal(0, HistoryChart.WindowFraction(Now - HistoryChart.Day, Now, HistoryChart.Day));
+
+    [Fact]
+    public void A_time_half_way_through_the_window_is_at_fraction_one_half() =>
+        Assert.Equal(0.5, HistoryChart.WindowFraction(Now - HistoryChart.Day / 2, Now, HistoryChart.Day));
+
+    [Fact]
+    public void Now_is_at_fraction_1() =>
+        Assert.Equal(1, HistoryChart.WindowFraction(Now, Now, HistoryChart.Day));
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(50, 0.5)]
+    [InlineData(100, 1)]
+    public void A_percent_is_the_same_fraction_of_the_plot_height(int percent, double fraction) =>
+        Assert.Equal(fraction, HistoryChart.HeightFraction(percent));
+
+    [Fact]
     public void Empty_history_has_no_points_and_no_joins()
     {
         var chart = Day();
