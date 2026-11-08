@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: nuget
+    directories:
+      - /src/LogitechBattery.Core
+      - /tests/LogitechBattery.Tests
+    schedule:
+      interval: monthly
+    groups:
+      nuget:
+        patterns: ["*"]
+    # A new major version can need a migration (xunit 2 to 3): do those by hand.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: build
