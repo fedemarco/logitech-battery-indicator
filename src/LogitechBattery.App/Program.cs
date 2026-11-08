@@ -6,8 +6,6 @@ namespace LogitechBattery;
 
 internal static class Program
 {
-    private static readonly TimeSpan HistoryRetention = TimeSpan.FromDays(365);
-
     [STAThread]
     private static void Main(string[] args)
     {
@@ -58,7 +56,7 @@ internal static class Program
     private static BatteryHistory OpenHistory()
     {
         var history = new BatteryHistory(Path.Combine(AppPaths.DataDirectory, "history.csv"));
-        history.PruneOlderThan(HistoryRetention, DateTimeOffset.Now);
+        history.PruneOlderThan(BatteryHistory.Retention, DateTimeOffset.Now);
         return history;
     }
 

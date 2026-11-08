@@ -9,6 +9,9 @@ namespace LogitechBattery.Battery;
 public sealed class BatteryHistory(string path)
 {
     public static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(15);
+
+    /// <summary>How long history is kept: older records are pruned at startup, and the panel looks this far back for the last charge.</summary>
+    public static readonly TimeSpan Retention = TimeSpan.FromDays(365);
     private const string TimeFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'";
 
     private HistoryRecord? _last;

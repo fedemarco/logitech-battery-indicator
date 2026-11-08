@@ -1,4 +1,5 @@
 using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using LogitechBattery.Battery;
 
 namespace LogitechBattery;
@@ -6,19 +7,64 @@ namespace LogitechBattery;
 /// <summary>The panel that opens on a left-click of the tray icon: status, last charge, estimate and the battery graph.</summary>
 internal sealed class OverlayForm : Form
 {
-    private const int LogicalWidth = 360;
-    private const int LogicalHeight = 260;
-    private static readonly TimeSpan LastChargeLookBack = TimeSpan.FromDays(365);
+    /// <summary>All sizes are logical pixels at 96 DPI; <see cref="Scaled"/> and <see cref="PixelFont"/> apply the monitor's DPI.</summary>
+    private static class PanelLayout
+    {
+        public const int Width = 360;
+        public const int Height = 260;
+        public const int Margin = 12;
+
+        public const int StatusTop = 10;
+        public const int StatusHeight = 24;
+        public const int EstimateOffsetY = 3; // the smaller estimate text sits lower to share the status baseline
+        public const int LastChargeTop = 36;
+        public const int LastChargeHeight = 18;
+
+        public const int ToggleTop = 62;
+        public const int ToggleWidth = 48;
+        public const int ToggleHeight = 24;
+        public const int ToggleGap = 6;
+
+        public const int PlotLeft = 44; // room for the percent labels
+        public const int PlotTop = 100;
+        public const int PlotRightMargin = 14;
+        public const int PlotBottomMargin = 34; // room for the time labels
+
+        public const int PercentLabelWidth = 32;
+        public const int PercentLabelHeight = 16;
+        public const int PercentLabelGap = 4;
+
+        public const int TickLength = 4;
+        public const int TickLabelTop = 6;
+        public const int TickLabelWidth = 40;
+        public const int TickLabelHeight = 16;
+
+        public const float SolidLineWidth = 2;
+        public const float DashedLineWidth = 1.5f;
+        public const float SinglePointRadius = 3;
+
+        public const float StatusFontSize = 15;
+        public const float DetailFontSize = 12;
+        public const float AxisFontSize = 11;
+    }
+
+    private sealed record TimeRangeOption(string Label, TimeSpan Window);
 
     private static readonly Color Background = ColorTranslator.FromHtml("#202020");
     private static readonly Color BorderColor = ColorTranslator.FromHtml("#3A3A3A");
     private static readonly Color PrimaryText = Color.White;
     private static readonly Color SecondaryText = ColorTranslator.FromHtml("#9A9A9A");
-    private static readonly Color GridColor = Color.FromArgb(60, 0x9A, 0x9A, 0x9A);
+    private static readonly Color GridColor = Color.FromArgb(60, SecondaryText);
     private static readonly Color LineColor = ColorTranslator.FromHtml("#4CC2FF");
     private static readonly Color SelectedToggle = ColorTranslator.FromHtml("#3A3A3A");
 
-    private static readonly (string Label, TimeSpan Window)[] Windows = [("24 h", HistoryChart.Day), ("7 d", HistoryChart.Week)];
+    private static readonly TimeRangeOption[] TimeRanges =
+    [
+        new("24 h", HistoryChart.Day),
+        new("7 d", HistoryChart.Week),
+    ];
+
+    private static readonly int[] PercentGridLines = [0, 50, 100];
 
     private readonly BatteryHistory? _history;
     private IReadOnlyList<HistoryRecord> _records = [];
@@ -26,7 +72,7 @@ internal sealed class OverlayForm : Form
     private string _statusLine = "";
     private string _estimateText = "";
     private string? _lastChargeText;
-    private TimeSpan _window = HistoryChart.Day; // every open starts with the 24 h view
+    private TimeRangeOption _selectedRange = TimeRanges[0]; // every open starts with the 24 h view
     private HistoryChart _chart = HistoryChart.Build([], DateTimeOffset.UtcNow, HistoryChart.Day);
 
     public OverlayForm(BatteryHistory? history)
@@ -60,27 +106,28 @@ internal sealed class OverlayForm : Form
     public void ReloadHistory()
     {
         // ReadSince returns nothing when the file is missing or locked.
-        _records = _history?.ReadSince(DateTimeOffset.UtcNow - LastChargeLookBack) ?? [];
+        _records = _history?.ReadSince(DateTimeOffset.UtcNow - BatteryHistory.Retention) ?? [];
         RebuildChart();
         UpdateLastChargeText();
         Invalidate();
     }
 
-    private void RebuildChart()
+    private void RebuildChart() => _chart = HistoryChart.Build(_records, DateTimeOffset.UtcNow, _selectedRange.Window);
+
+    private void UpdateLastChargeText()
     {
         var now = DateTimeOffset.UtcNow;
-        _chart = HistoryChart.Build(_records, now, _window);
+        _lastChargeText = _history is null
+            ? null
+            : ChargeHistory.Describe(ChargeHistory.LastCharge(_records, now), _status, now, TimeZoneInfo.Local);
     }
-
-    private void UpdateLastChargeText() =>
-        _lastChargeText = _history is null ? null : ChargeHistory.Describe(ChargeHistory.LastCharge(_records, DateTimeOffset.UtcNow), _status, DateTimeOffset.UtcNow, TimeZoneInfo.Local);
 
     private static Screen TargetScreen() => Screen.FromPoint(Cursor.Position);
 
     protected override void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
-        ClientSize = new Size((int)(LogicalWidth * DpiScale), (int)(LogicalHeight * DpiScale));
+        ClientSize = new Size((int)(PanelLayout.Width * DpiScale), (int)(PanelLayout.Height * DpiScale));
         Location = OverlayPlacement.Location(TargetScreen().WorkingArea, Taskbar.Find(), Size, DpiScale);
     }
 
@@ -106,19 +153,32 @@ internal sealed class OverlayForm : Form
     protected override void OnMouseClick(MouseEventArgs e)
     {
         base.OnMouseClick(e);
-        for (var i = 0; i < Windows.Length; i++)
-        {
-            if (!ToggleRect(i).Contains(e.Location) || Windows[i].Window == _window)
-                continue;
-            _window = Windows[i].Window;
-            RebuildChart();
-            Invalidate();
-        }
+        if (RangeAt(e.Location) is not { } clicked || clicked == _selectedRange)
+            return;
+
+        _selectedRange = clicked;
+        RebuildChart();
+        Invalidate();
     }
 
-    private RectangleF ToggleRect(int index) => Scaled(12 + index * 54, 62, 48, 24);
+    private TimeRangeOption? RangeAt(Point location)
+    {
+        for (var index = 0; index < TimeRanges.Length; index++)
+        {
+            if (ToggleRect(index).Contains(location))
+                return TimeRanges[index];
+        }
+        return null;
+    }
 
-    private RectangleF PlotRect => Scaled(44, 100, LogicalWidth - 44 - 14, LogicalHeight - 100 - 34);
+    private RectangleF ToggleRect(int index) =>
+        Scaled(PanelLayout.Margin + index * (PanelLayout.ToggleWidth + PanelLayout.ToggleGap), PanelLayout.ToggleTop, PanelLayout.ToggleWidth, PanelLayout.ToggleHeight);
+
+    private RectangleF PlotRect => Scaled(
+        PanelLayout.PlotLeft,
+        PanelLayout.PlotTop,
+        PanelLayout.Width - PanelLayout.PlotLeft - PanelLayout.PlotRightMargin,
+        PanelLayout.Height - PanelLayout.PlotTop - PanelLayout.PlotBottomMargin);
 
     private RectangleF Scaled(float x, float y, float width, float height) =>
         new(x * DpiScale, y * DpiScale, width * DpiScale, height * DpiScale);
@@ -126,97 +186,129 @@ internal sealed class OverlayForm : Form
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+        var graphics = e.Graphics;
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
         using var border = new Pen(BorderColor);
-        g.DrawRectangle(border, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
+        graphics.DrawRectangle(border, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
 
-        DrawHeader(g);
-        DrawToggle(g);
-        DrawGraph(g);
+        DrawHeader(graphics);
+        DrawToggle(graphics);
+        DrawGraph(graphics, DateTimeOffset.UtcNow);
     }
 
-    private void DrawHeader(Graphics g)
+    private void DrawHeader(Graphics graphics)
     {
-        var line = Scaled(12, 10, LogicalWidth - 24, 24);
-        using var statusFont = PixelFont(15, FontStyle.Bold);
-        using var smallFont = PixelFont(12);
-        DrawText(g, _statusLine, statusFont, PrimaryText, line, StringAlignment.Near);
-        DrawText(g, _estimateText, smallFont, SecondaryText, line with { Y = line.Y + 3 * DpiScale }, StringAlignment.Far);
-        if (_lastChargeText is not null)
-            DrawText(g, _lastChargeText, smallFont, SecondaryText, Scaled(12, 36, LogicalWidth - 24, 18), StringAlignment.Near);
+        var statusLine = Scaled(PanelLayout.Margin, PanelLayout.StatusTop, PanelLayout.Width - 2 * PanelLayout.Margin, PanelLayout.StatusHeight);
+        using var statusFont = PixelFont(PanelLayout.StatusFontSize, FontStyle.Bold);
+        using var detailFont = PixelFont(PanelLayout.DetailFontSize);
+        DrawText(graphics, _statusLine, statusFont, PrimaryText, statusLine, StringAlignment.Near);
+        DrawText(graphics, _estimateText, detailFont, SecondaryText, statusLine with { Y = statusLine.Y + PanelLayout.EstimateOffsetY * DpiScale }, StringAlignment.Far);
+
+        if (_lastChargeText is null)
+            return;
+        var lastChargeLine = Scaled(PanelLayout.Margin, PanelLayout.LastChargeTop, PanelLayout.Width - 2 * PanelLayout.Margin, PanelLayout.LastChargeHeight);
+        DrawText(graphics, _lastChargeText, detailFont, SecondaryText, lastChargeLine, StringAlignment.Near);
     }
 
-    private void DrawToggle(Graphics g)
+    private void DrawToggle(Graphics graphics)
     {
-        using var font = PixelFont(12);
+        using var font = PixelFont(PanelLayout.DetailFontSize);
         using var selectedBrush = new SolidBrush(SelectedToggle);
-        for (var i = 0; i < Windows.Length; i++)
+        for (var index = 0; index < TimeRanges.Length; index++)
         {
-            var isSelected = Windows[i].Window == _window;
+            var isSelected = TimeRanges[index] == _selectedRange;
             if (isSelected)
-                g.FillRectangle(selectedBrush, ToggleRect(i));
-            DrawText(g, Windows[i].Label, font, isSelected ? PrimaryText : SecondaryText, ToggleRect(i), StringAlignment.Center, StringAlignment.Center);
+                graphics.FillRectangle(selectedBrush, ToggleRect(index));
+            DrawText(graphics, TimeRanges[index].Label, font, isSelected ? PrimaryText : SecondaryText, ToggleRect(index), StringAlignment.Center, StringAlignment.Center);
         }
     }
 
-    private void DrawGraph(Graphics g)
+    private void DrawGraph(Graphics graphics, DateTimeOffset now)
     {
         var plot = PlotRect;
-        using var font = PixelFont(11);
-        var now = DateTimeOffset.UtcNow;
-        DrawAxes(g, plot, font, now);
+        using var font = PixelFont(PanelLayout.AxisFontSize);
+        DrawAxes(graphics, plot, font, now);
 
-        var emptyText = _history is null ? "No history in simulator mode" : _chart.Points.Count == 0 ? "No history yet" : null;
-        if (emptyText is not null)
+        if (EmptyMessage() is { } message)
         {
-            DrawText(g, emptyText, font, SecondaryText, plot, StringAlignment.Center, StringAlignment.Center);
+            DrawText(graphics, message, font, SecondaryText, plot, StringAlignment.Center, StringAlignment.Center);
             return;
         }
 
-        PointF ToPixel(ChartPoint point) => new(
-            plot.Left + (float)HistoryChart.WindowFraction(point.Time, now, _window) * plot.Width,
-            plot.Bottom - (float)HistoryChart.HeightFraction(point.Percent) * plot.Height);
-
-        // Segments are drawn one by one, so round caps (not a line join) hide the notches at the bends.
-        using var solidPen = new Pen(LineColor, 2 * DpiScale) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-        using var dashedPen = new Pen(LineColor, 1.5f * DpiScale) { DashStyle = DashStyle.Dash };
-        g.SetClip(plot);
-        foreach (var join in _chart.Joins)
-            g.DrawLine(join.IsSolid ? solidPen : dashedPen, ToPixel(join.From), ToPixel(join.To));
-
+        graphics.SetClip(plot);
+        DrawBatteryLine(graphics, plot, now);
         if (_chart.Points.Count == 1)
-        {
-            var dot = ToPixel(_chart.Points[0]);
-            var radius = 3 * DpiScale;
-            using var brush = new SolidBrush(LineColor);
-            g.FillEllipse(brush, dot.X - radius, dot.Y - radius, 2 * radius, 2 * radius);
-        }
-        g.ResetClip();
+            DrawSinglePoint(graphics, ToPixel(_chart.Points[0], plot, now));
+        graphics.ResetClip();
     }
 
-    private void DrawAxes(Graphics g, RectangleF plot, Font font, DateTimeOffset now)
+    private string? EmptyMessage()
+    {
+        if (_history is null)
+            return "No history in simulator mode";
+        return _chart.Points.Count == 0 ? "No history yet" : null;
+    }
+
+    private void DrawBatteryLine(Graphics graphics, RectangleF plot, DateTimeOffset now)
+    {
+        // Segments are drawn one by one, so round caps (not a line join) hide the notches at the bends.
+        using var solidPen = new Pen(LineColor, PanelLayout.SolidLineWidth * DpiScale) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        using var dashedPen = new Pen(LineColor, PanelLayout.DashedLineWidth * DpiScale) { DashStyle = DashStyle.Dash };
+        foreach (var join in _chart.Joins)
+            graphics.DrawLine(join.IsSolid ? solidPen : dashedPen, ToPixel(join.From, plot, now), ToPixel(join.To, plot, now));
+    }
+
+    private void DrawSinglePoint(Graphics graphics, PointF center)
+    {
+        var radius = PanelLayout.SinglePointRadius * DpiScale;
+        using var brush = new SolidBrush(LineColor);
+        graphics.FillEllipse(brush, center.X - radius, center.Y - radius, 2 * radius, 2 * radius);
+    }
+
+    private PointF ToPixel(ChartPoint point, RectangleF plot, DateTimeOffset now) => new(
+        TimeToX(point.Time, plot, now),
+        PercentToY(point.Percent, plot));
+
+    private float TimeToX(DateTimeOffset time, RectangleF plot, DateTimeOffset now) =>
+        plot.Left + (float)HistoryChart.WindowFraction(time, now, _selectedRange.Window) * plot.Width;
+
+    private static float PercentToY(int percent, RectangleF plot) =>
+        plot.Bottom - (float)HistoryChart.HeightFraction(percent) * plot.Height;
+
+    private void DrawAxes(Graphics graphics, RectangleF plot, Font font, DateTimeOffset now)
     {
         using var gridPen = new Pen(GridColor, 1);
-        foreach (var percent in new[] { 0, 50, 100 })
-        {
-            var y = plot.Bottom - (float)HistoryChart.HeightFraction(percent) * plot.Height;
-            g.DrawLine(gridPen, plot.Left, y, plot.Right, y);
-            var label = new RectangleF(plot.Left - 36 * DpiScale, y - 8 * DpiScale, 32 * DpiScale, 16 * DpiScale);
-            DrawText(g, percent.ToString(), font, SecondaryText, label, StringAlignment.Far, StringAlignment.Center);
-        }
+        DrawPercentGrid(graphics, plot, font, gridPen);
+        DrawTimeTicks(graphics, plot, font, gridPen, now);
+    }
 
-        var ticks = _window == HistoryChart.Day
+    private void DrawPercentGrid(Graphics graphics, RectangleF plot, Font font, Pen gridPen)
+    {
+        foreach (var percent in PercentGridLines)
+        {
+            var y = PercentToY(percent, plot);
+            graphics.DrawLine(gridPen, plot.Left, y, plot.Right, y);
+
+            var labelLeft = plot.Left - (PanelLayout.PercentLabelWidth + PanelLayout.PercentLabelGap) * DpiScale;
+            var label = new RectangleF(labelLeft, y - PanelLayout.PercentLabelHeight / 2f * DpiScale, PanelLayout.PercentLabelWidth * DpiScale, PanelLayout.PercentLabelHeight * DpiScale);
+            DrawText(graphics, percent.ToString(), font, SecondaryText, label, StringAlignment.Far, StringAlignment.Center);
+        }
+    }
+
+    private void DrawTimeTicks(Graphics graphics, RectangleF plot, Font font, Pen gridPen, DateTimeOffset now)
+    {
+        var ticks = _selectedRange.Window == HistoryChart.Day
             ? HistoryChart.HourTicks(now, TimeZoneInfo.Local)
             : HistoryChart.DayTicks(now, TimeZoneInfo.Local);
         foreach (var tick in ticks)
         {
-            var x = plot.Left + (float)HistoryChart.WindowFraction(tick.Time, now, _window) * plot.Width;
-            g.DrawLine(gridPen, x, plot.Bottom, x, plot.Bottom + 4 * DpiScale);
-            var label = new RectangleF(x - 20 * DpiScale, plot.Bottom + 6 * DpiScale, 40 * DpiScale, 16 * DpiScale);
-            DrawText(g, tick.Label, font, SecondaryText, label, StringAlignment.Center);
+            var x = TimeToX(tick.Time, plot, now);
+            graphics.DrawLine(gridPen, x, plot.Bottom, x, plot.Bottom + PanelLayout.TickLength * DpiScale);
+
+            var label = new RectangleF(x - PanelLayout.TickLabelWidth / 2f * DpiScale, plot.Bottom + PanelLayout.TickLabelTop * DpiScale, PanelLayout.TickLabelWidth * DpiScale, PanelLayout.TickLabelHeight * DpiScale);
+            DrawText(graphics, tick.Label, font, SecondaryText, label, StringAlignment.Center);
         }
     }
 
@@ -225,7 +317,7 @@ internal sealed class OverlayForm : Form
         new("Segoe UI", logicalPixels * DpiScale, style, GraphicsUnit.Pixel);
 
     private static void DrawText(
-        Graphics g, string text, Font font, Color color, RectangleF area,
+        Graphics graphics, string text, Font font, Color color, RectangleF area,
         StringAlignment horizontal, StringAlignment vertical = StringAlignment.Near)
     {
         using var brush = new SolidBrush(color);
@@ -235,6 +327,6 @@ internal sealed class OverlayForm : Form
             LineAlignment = vertical,
             Trimming = StringTrimming.EllipsisCharacter,
         };
-        g.DrawString(text, font, brush, area, format);
+        graphics.DrawString(text, font, brush, area, format);
     }
 }
