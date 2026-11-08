@@ -14,7 +14,6 @@ internal static class TrayIconRenderer
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(IntPtr handle);
 
-    // shortcut: icon size taken at startup; redraw on DPI change if users switch scaling
     public static Icon Render(TrayIndicator indicator, int size)
     {
         using var bitmap = Draw(Load(indicator.Icon), size);
@@ -25,7 +24,8 @@ internal static class TrayIconRenderer
     {
         var bitmap = new Bitmap(size, size, PixelFormat.Format32bppArgb);
         using var graphics = Graphics.FromImage(bitmap);
-        // The art is drawn in 2x2 blocks, so nearest-neighbor at 32 -> 16 is pixel-exact.
+        // The art is drawn in 2x2 blocks, so nearest-neighbor at 32 -> 16 is pixel-exact. At 20, 24 and 28 px some pixels become
+        // 1 px wider than others, which still looks cleaner than smoothing (compared on previews, 2026-11-08).
         graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
         graphics.PixelOffsetMode = PixelOffsetMode.Half;
         graphics.DrawImage(source, new Rectangle(0, 0, size, size));

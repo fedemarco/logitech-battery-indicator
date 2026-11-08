@@ -35,10 +35,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly NotifyIcon _notifyIcon;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly System.Windows.Forms.Timer _followUp = new();
-    private readonly int _iconSize = SystemInformation.SmallIconSize.Width;
     private volatile SynchronizationContext? _ui;
 
     private Icon? _icon;
+    private int _iconSize;
     private TrayIndicator? _indicator;
     private OverlayForm? _overlay;
     private long? _overlayClosedAtMs;
@@ -281,8 +281,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
             RefreshTooltip();
 
             var indicator = TrayIndicator.From(status);
-            if (indicator != _indicator)
-                ReplaceIcon(indicator);
+            var iconSize = TrayIconSize.Current(); // checked each time: the scaling can change while the app runs
+            if (indicator != _indicator || iconSize != _iconSize)
+                ReplaceIcon(indicator, iconSize);
 
             if (status is not null && _alerts.Update(status) is { } alert)
                 ShowAlert(alert, status.Percent);
@@ -322,12 +323,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _overlay = overlay; // after Show, so a failing Show leaves no half-open panel behind
     }
 
-    private void ReplaceIcon(TrayIndicator indicator)
+    private void ReplaceIcon(TrayIndicator indicator, int iconSize)
     {
         var oldIcon = _icon;
-        _icon = TrayIconRenderer.Render(indicator, _iconSize);
+        _icon = TrayIconRenderer.Render(indicator, iconSize);
         _notifyIcon.Icon = _icon;
         _indicator = indicator;
+        _iconSize = iconSize;
         oldIcon?.Dispose();
     }
 
