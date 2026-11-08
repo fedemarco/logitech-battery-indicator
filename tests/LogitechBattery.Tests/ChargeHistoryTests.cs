@@ -89,6 +89,12 @@ public sealed class ChargeHistoryTests
     }
 
     [Fact]
+    public void Describe_shows_the_date_once_the_charge_is_exactly_7_days_old()
+    {
+        Assert.Equal("Last charge: 29 Oct 2026", Describe(Now - HistoryChart.Week));
+    }
+
+    [Fact]
     public void Describe_shows_the_date_for_older_charges()
     {
         Assert.Equal("Last charge: 20 Oct 2026", Describe(new DateTimeOffset(2026, 10, 20, 9, 0, 0, TimeSpan.Zero)));

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace LogitechBattery.Battery;
 
 public sealed record ChartPoint(DateTimeOffset Time, int Percent);
@@ -13,8 +15,8 @@ public sealed record HistoryChart(IReadOnlyList<ChartPoint> Points, IReadOnlyLis
     public static readonly TimeSpan Day = TimeSpan.FromHours(24);
     public static readonly TimeSpan Week = TimeSpan.FromDays(7);
 
-    // The heartbeat is 15 min, so a longer silence means the app was not watching.
-    private static readonly TimeSpan MaxSolidGap = TimeSpan.FromMinutes(20);
+    // The history writes at least one record per heartbeat, so a longer silence means the app was not watching.
+    private static readonly TimeSpan MaxSolidGap = BatteryHistory.HeartbeatInterval + TimeSpan.FromMinutes(5);
     private static readonly TimeSpan HourTickStep = TimeSpan.FromHours(6);
 
     /// <summary>Points inside [now - window, now] in time order; records after now (clock skew) are dropped.</summary>
@@ -46,13 +48,19 @@ public sealed record HistoryChart(IReadOnlyList<ChartPoint> Points, IReadOnlyLis
         var ticks = new List<ChartTick>();
         for (var day = TimeZoneInfo.ConvertTime(start, zone).Date; day <= lastDay; day = day.AddDays(1))
         {
-            for (var local = day; local.Date == day; local += step)
+            foreach (var local in LocalTimesOfDay(day, step))
             {
                 var time = new DateTimeOffset(local, zone.GetUtcOffset(local));
                 if (time >= start && time <= now)
-                    ticks.Add(new ChartTick(time, local.ToString(format, System.Globalization.CultureInfo.InvariantCulture)));
+                    ticks.Add(new ChartTick(time, local.ToString(format, CultureInfo.InvariantCulture)));
             }
         }
         return ticks;
+    }
+
+    private static IEnumerable<DateTime> LocalTimesOfDay(DateTime day, TimeSpan step)
+    {
+        for (var local = day; local.Date == day; local += step)
+            yield return local;
     }
 }

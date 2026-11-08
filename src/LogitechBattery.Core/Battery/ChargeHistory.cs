@@ -19,15 +19,18 @@ public static class ChargeHistory
     public static string? Describe(DateTimeOffset? lastCharge, BatteryStatus? current, DateTimeOffset now, TimeZoneInfo zone)
     {
         const string prefix = "Last charge: ";
+        const string TodayFormat = "HH:mm";
+        const string WithinAWeekFormat = "ddd HH:mm";
+        const string OlderFormat = "d MMM yyyy";
         if (current?.Charging is ChargingState.Charging or ChargingState.Full)
             return null;
         if (lastCharge is not { } time)
             return prefix + "not seen yet";
 
         var local = TimeZoneInfo.ConvertTime(time, zone);
-        var format = local.Date == TimeZoneInfo.ConvertTime(now, zone).Date ? "HH:mm"
-            : now - time < HistoryChart.Week ? "ddd HH:mm"
-            : "d MMM yyyy";
+        var format = local.Date == TimeZoneInfo.ConvertTime(now, zone).Date ? TodayFormat
+            : now - time < HistoryChart.Week ? WithinAWeekFormat
+            : OlderFormat;
         return prefix + local.ToString(format, CultureInfo.InvariantCulture);
     }
 }

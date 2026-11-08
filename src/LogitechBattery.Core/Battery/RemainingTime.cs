@@ -5,7 +5,7 @@ namespace LogitechBattery.Battery;
 /// <summary>Estimates the remaining battery time from the recent discharge history.</summary>
 public static class RemainingTime
 {
-    public static readonly TimeSpan Window = TimeSpan.FromDays(7);
+    public static readonly TimeSpan Window = HistoryChart.Week;
     private static readonly TimeSpan MinimumSpan = TimeSpan.FromDays(2);
     private const int MinimumDropPercent = 5;
 
@@ -20,16 +20,16 @@ public static class RemainingTime
     {
         var totalDrop = 0;
         var totalSpan = TimeSpan.Zero;
-        (Reading First, Reading Last)? segment = null;
+        DischargeSegment? open = null;
 
         void CloseSegment()
         {
-            if (segment is { } open)
+            if (open is { } segment)
             {
-                totalDrop += open.First.Percent - open.Last.Percent;
-                totalSpan += open.Last.Time - open.First.Time;
+                totalDrop += segment.Drop;
+                totalSpan += segment.Span;
             }
-            segment = null;
+            open = null;
         }
 
         var recent = records.Where(record => record.Time >= now - Window && record.Time <= now);
@@ -43,11 +43,12 @@ public static class RemainingTime
             if (record.Charging != ChargingState.Discharging || record.Percent is not { } percent)
                 continue;
 
-            if (segment is { Last: var previous } && percent > previous.Percent)
+            if (open is { } current && percent > current.LastPercent)
                 CloseSegment();
 
-            var reading = new Reading(record.Time, percent);
-            segment = (segment?.First ?? reading, reading);
+            open = open is { } continuing
+                ? continuing.Extend(record.Time, percent)
+                : new DischargeSegment(record.Time, percent, record.Time, percent);
         }
         CloseSegment();
 
@@ -62,10 +63,16 @@ public static class RemainingTime
             || current is not { Connection: ConnectionState.Connected, Charging: ChargingState.Discharging, Percent: { } percent })
             return null;
 
-        var hours = percent / rate * 24;
+        var hours = percent / rate * TimeSpan.HoursPerDay;
         var rounded = Math.Round(hours, MidpointRounding.AwayFromZero);
         return rounded == 0 ? "Less than 1 h left" : string.Create(CultureInfo.InvariantCulture, $"{rounded} h left");
     }
 
-    private sealed record Reading(DateTimeOffset Time, int Percent);
+    /// <summary>An unbroken stretch of discharging, from its first to its latest reading.</summary>
+    private sealed record DischargeSegment(DateTimeOffset FirstTime, int FirstPercent, DateTimeOffset LastTime, int LastPercent)
+    {
+        public int Drop => FirstPercent - LastPercent;
+        public TimeSpan Span => LastTime - FirstTime;
+        public DischargeSegment Extend(DateTimeOffset time, int percent) => this with { LastTime = time, LastPercent = percent };
+    }
 }

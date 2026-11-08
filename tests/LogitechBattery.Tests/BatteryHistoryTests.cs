@@ -205,7 +205,18 @@ public sealed class BatteryHistoryTests : IDisposable
         history.PruneOlderThan(TimeSpan.FromDays(3), Start + TimeSpan.FromDays(10));
 
         Assert.Equal([70], history.ReadSince(DateTimeOffset.MinValue).Select(record => record.Percent));
-        Assert.Single(Directory.GetFiles(_folder));
+    }
+
+    [Fact]
+    public void Prune_leaves_no_temporary_file_behind()
+    {
+        var history = new BatteryHistory(FilePath);
+        history.Record(Reading(percent: 80));
+        history.Record(Reading(percent: 70, after: TimeSpan.FromDays(10)));
+
+        history.PruneOlderThan(TimeSpan.FromDays(3), Start + TimeSpan.FromDays(10));
+
+        Assert.Equal([FilePath], Directory.GetFiles(_folder));
     }
 
     [Fact]
@@ -301,16 +312,21 @@ public sealed class BatteryHistoryTests : IDisposable
     }
 
     [Theory]
-    [InlineData("2026-11-04T22:50:42Z,101,Discharging,Connected")]
-    [InlineData("2026-11-04T22:50:42Z,-1,Discharging,Connected")]
-    [InlineData("2026-11-04T22:50:42Z,82,7,Connected")]
-    [InlineData("2026-11-04T22:50:42Z,82,Discharging,9")]
-    [InlineData("2026-11-04T22:50:42Z,82,Discharging,1")]
-    [InlineData("2026-11-04T22:50:42Z,82, 1,Connected")]
-    [InlineData("2026-11-04T22:50:42Z,82,+1,Connected")]
-    [InlineData("2026-11-04T22:50:42Z,82, Discharging,Connected")]
-    [InlineData("2026-11-04T22:50:42Z,82,discharging,Connected")]
-    public void ReadSince_skips_out_of_range_percent_and_undefined_or_numeric_states(string line)
+    [InlineData("2026-11-04T22:50:42Z,101,Discharging,Connected")] // above 100
+    [InlineData("2026-11-04T22:50:42Z,-1,Discharging,Connected")]  // negative
+    public void ReadSince_skips_a_percent_outside_0_to_100(string line) => AssertLineIsSkipped(line);
+
+    [Theory]
+    [InlineData("2026-11-04T22:50:42Z,82,7,Connected")]            // number that is no ChargingState
+    [InlineData("2026-11-04T22:50:42Z,82,Discharging,9")]          // number that is no ConnectionState
+    [InlineData("2026-11-04T22:50:42Z,82,Discharging,1")]          // number that is a ConnectionState (Connected): names only
+    [InlineData("2026-11-04T22:50:42Z,82, 1,Connected")]           // leading space before a number
+    [InlineData("2026-11-04T22:50:42Z,82,+1,Connected")]           // sign before a number
+    [InlineData("2026-11-04T22:50:42Z,82, Discharging,Connected")] // leading space before the name
+    [InlineData("2026-11-04T22:50:42Z,82,discharging,Connected")]  // wrong case
+    public void ReadSince_skips_a_state_that_is_not_an_exact_enum_name(string line) => AssertLineIsSkipped(line);
+
+    private void AssertLineIsSkipped(string line)
     {
         Directory.CreateDirectory(_folder);
         File.WriteAllLines(FilePath, [line]);

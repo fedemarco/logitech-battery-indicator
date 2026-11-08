@@ -8,62 +8,45 @@ namespace LogitechBattery.Battery;
 /// </summary>
 public sealed class BatteryHistory(string path)
 {
-    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMinutes(15);
     private const string TimeFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'";
 
     private HistoryRecord? _last;
     private bool _lastLoaded;
 
     /// <summary>Returns true when a new line was written.</summary>
-    public bool Record(BatteryStatus status)
+    public bool Record(BatteryStatus status) => Guard(nameof(Record), fallback: false, () =>
     {
-        try
-        {
-            var record = new HistoryRecord(status.ReadAt.ToUniversalTime(), status.Percent, status.Charging, status.Connection);
-            if (!NeedsWriting(record))
-                return false;
-
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-            var separator = EndsWithPartialLine() ? Environment.NewLine : "";
-            File.AppendAllText(path, separator + Format(record) + Environment.NewLine);
-            _last = record;
-            return true;
-        }
-        catch (Exception ex)
-        {
-            LogFailure(nameof(Record), ex);
+        var record = new HistoryRecord(status.ReadAt.ToUniversalTime(), status.Percent, status.Charging, status.Connection);
+        if (!NeedsWriting(record))
             return false;
-        }
-    }
 
-    public IReadOnlyList<HistoryRecord> ReadSince(DateTimeOffset since)
-    {
-        try
-        {
-            return ReadAll().Where(record => record.Time >= since).ToList();
-        }
-        catch (Exception ex)
-        {
-            LogFailure(nameof(ReadSince), ex);
-            return [];
-        }
-    }
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        var separator = EndsWithPartialLine() ? Environment.NewLine : "";
+        File.AppendAllText(path, separator + Format(record) + Environment.NewLine);
+        _last = record;
+        return true;
+    });
+
+    public IReadOnlyList<HistoryRecord> ReadSince(DateTimeOffset since) =>
+        Guard<IReadOnlyList<HistoryRecord>>(nameof(ReadSince), fallback: [], () =>
+            ReadAll().Where(record => record.Time >= since).ToList());
 
     /// <summary>
     /// Drops records older than <paramref name="age"/> before the newest record that is not after <paramref name="now"/>,
     /// so a record dated in the future (wrong clock) cannot wipe the history.
     /// </summary>
-    public void PruneOlderThan(TimeSpan age, DateTimeOffset now) => Guard(nameof(PruneOlderThan), () =>
+    public void PruneOlderThan(TimeSpan age, DateTimeOffset now) => Guard(nameof(PruneOlderThan), fallback: false, () =>
     {
         var all = ReadAll();
         var pastRecords = all.Where(record => record.Time <= now).ToList();
         if (pastRecords.Count == 0)
-            return;
+            return false;
 
         var cutoff = pastRecords.Max(record => record.Time) - age;
         var kept = all.Where(record => record.Time >= cutoff).ToList();
         if (kept.Count == all.Count)
-            return;
+            return false;
 
         var tempPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!, Path.GetRandomFileName());
         try
@@ -75,10 +58,11 @@ public sealed class BatteryHistory(string path)
         {
             File.Delete(tempPath); // no-op after a successful move
         }
+        return true;
     });
 
     /// <summary>Returns true when the file is gone afterwards (deleted, or there was none).</summary>
-    public bool Clear()
+    public bool Clear() => Guard(nameof(Clear), fallback: false, () =>
     {
         try
         {
@@ -88,15 +72,10 @@ public sealed class BatteryHistory(string path)
         {
             // the data folder does not exist yet, so there is no file either
         }
-        catch (Exception ex)
-        {
-            LogFailure(nameof(Clear), ex);
-            return false;
-        }
         _last = null;
         _lastLoaded = true; // the file is gone, nothing to load
         return true;
-    }
+    });
 
     private bool NeedsWriting(HistoryRecord record)
     {
@@ -109,11 +88,11 @@ public sealed class BatteryHistory(string path)
             || record.Percent != _last.Percent
             || record.Charging != _last.Charging
             || record.Connection != _last.Connection
-            || IsHeartbeatDue(record.Time - _last.Time);
+            || IsHeartbeatDueOrClockMovedBack(record.Time - _last.Time);
     }
 
     // A negative delta means the clock moved back; waiting for it to catch up would leave a long gap.
-    private static bool IsHeartbeatDue(TimeSpan sinceLastRecord) =>
+    private static bool IsHeartbeatDueOrClockMovedBack(TimeSpan sinceLastRecord) =>
         sinceLastRecord < TimeSpan.Zero || sinceLastRecord >= HeartbeatInterval;
 
     private bool EndsWithPartialLine()
@@ -132,6 +111,7 @@ public sealed class BatteryHistory(string path)
             ? File.ReadLines(path).Select(TryParse).OfType<HistoryRecord>().ToList()
             : [];
 
+    // The CSV stores the enum names, so renaming a ChargingState or ConnectionState member orphans existing history files.
     private static string Format(HistoryRecord record) =>
         string.Join(',',
             record.Time.UtcDateTime.ToString(TimeFormat, CultureInfo.InvariantCulture),
@@ -150,7 +130,7 @@ public sealed class BatteryHistory(string path)
 
         if (fields[1].Length == 0)
             return new HistoryRecord(time, null, charging, connection);
-        return int.TryParse(fields[1], NumberStyles.None, CultureInfo.InvariantCulture, out var percent) && percent <= 100
+        return int.TryParse(fields[1], NumberStyles.None, CultureInfo.InvariantCulture, out var percent) && percent <= BatteryStatus.FullPercent
             ? new HistoryRecord(time, percent, charging, connection)
             : null;
     }
@@ -164,18 +144,17 @@ public sealed class BatteryHistory(string path)
         return true;
     }
 
-    private static void LogFailure(string operation, Exception ex) =>
-        AppLog.Write($"Battery history {operation} failed: {ex.Message}");
-
-    private static void Guard(string operation, Action action)
+    /// <summary>Runs one history operation; any failure is logged and gives <paramref name="fallback"/>.</summary>
+    private static T Guard<T>(string operation, T fallback, Func<T> action)
     {
         try
         {
-            action();
+            return action();
         }
         catch (Exception ex)
         {
-            LogFailure(operation, ex);
+            AppLog.Write($"Battery history {operation} failed: {ex.Message}");
+            return fallback;
         }
     }
 }

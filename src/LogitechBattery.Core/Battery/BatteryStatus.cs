@@ -6,6 +6,8 @@ public sealed record BatteryStatus(
     ChargingState Charging,
     DateTimeOffset ReadAt)
 {
+    public const int FullPercent = 100;
+
     public BatteryLevel? Level => Percent switch
     {
         null => null,

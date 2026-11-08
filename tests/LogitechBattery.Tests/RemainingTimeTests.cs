@@ -49,7 +49,7 @@ public sealed class RemainingTimeTests
     public void No_drop_gives_no_rate_instead_of_dividing_by_zero() => Assert.Null(Rate(Record(5, 80), Record(0, 80)));
 
     [Fact]
-    public void A_rise_while_discharging_starts_a_new_segment() => Assert.Null(Rate(Record(5, 70), Record(0, 72)));
+    public void A_history_that_only_rises_gives_no_rate() => Assert.Null(Rate(Record(5, 70), Record(0, 72)));
 
     [Fact]
     public void A_small_rise_splits_the_segment_and_both_drops_count()
@@ -135,12 +135,6 @@ public sealed class RemainingTimeTests
     [InlineData(ChargingState.Unknown)]
     public void Not_discharging_gives_no_text(ChargingState charging) =>
         Assert.Null(RemainingTime.RemainingText(Current(charging: charging), 10));
-
-    [Theory]
-    [InlineData(ConnectionState.Asleep)]
-    [InlineData(ConnectionState.NotFound)]
-    public void Not_connected_gives_no_text(ConnectionState connection) =>
-        Assert.Null(RemainingTime.RemainingText(Current(percent: null, connection: connection), 10));
 
     [Theory]
     [InlineData(ConnectionState.Asleep)]

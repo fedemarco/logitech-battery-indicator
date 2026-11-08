@@ -18,19 +18,18 @@ public enum MockMode
 public sealed class MockBatteryProvider : IBatteryProvider
 {
     // Auto cycle: discharge from full to the floor, asleep, charge back up, stay full.
-    private const int FullPercent = 100;
     private const int FloorPercent = 5;
     private const int ChargePercentPerSecond = 3;
 
     // Percent changes by 1 per second; +1 keeps the floor on screen for its own second.
-    internal const double DischargeSeconds = FullPercent - FloorPercent + 1;
+    internal const double DischargeSeconds = BatteryStatus.FullPercent - FloorPercent + 1;
     internal const double AsleepSeconds = 5;
-    internal const double ChargeSeconds = (double)(FullPercent - FloorPercent) / ChargePercentPerSecond;
+    internal const double ChargeSeconds = (double)(BatteryStatus.FullPercent - FloorPercent) / ChargePercentPerSecond;
     internal const double FullSeconds = 10;
     internal const double CycleSeconds = DischargeSeconds + AsleepSeconds + ChargeSeconds + FullSeconds;
 
     // 100 % is reported as Full, so charging never shows it.
-    private const int HighestChargingPercent = FullPercent - 1;
+    private const int HighestChargingPercent = BatteryStatus.FullPercent - 1;
 
     private readonly TimeProvider _time;
     private MockMode _mode = MockMode.Auto;
@@ -62,7 +61,7 @@ public sealed class MockBatteryProvider : IBatteryProvider
             MockMode.Discharging25 => Connected(25, ChargingState.Discharging),
             MockMode.Discharging10 => Connected(10, ChargingState.Discharging),
             MockMode.Charging60 => Connected(60, ChargingState.Charging),
-            MockMode.Full100 => Connected(FullPercent, ChargingState.Full),
+            MockMode.Full100 => Connected(BatteryStatus.FullPercent, ChargingState.Full),
             MockMode.Asleep => NoReading(ConnectionState.Asleep),
             _ => NoReading(ConnectionState.NotFound),
         };
@@ -78,7 +77,7 @@ public sealed class MockBatteryProvider : IBatteryProvider
         var secondsIntoCycle = _time.GetElapsedTime(_cycleStart).TotalSeconds % CycleSeconds;
 
         if (secondsIntoCycle < asleepStart)
-            return Connected(FullPercent - (int)secondsIntoCycle, ChargingState.Discharging);
+            return Connected(BatteryStatus.FullPercent - (int)secondsIntoCycle, ChargingState.Discharging);
         if (secondsIntoCycle < chargeStart)
             return NoReading(ConnectionState.Asleep);
         if (secondsIntoCycle < fullStart)
@@ -86,7 +85,7 @@ public sealed class MockBatteryProvider : IBatteryProvider
             var charged = (int)((secondsIntoCycle - chargeStart) * ChargePercentPerSecond);
             return Connected(Math.Min(HighestChargingPercent, FloorPercent + charged), ChargingState.Charging);
         }
-        return Connected(FullPercent, ChargingState.Full);
+        return Connected(BatteryStatus.FullPercent, ChargingState.Full);
     }
 
     private static Reading Connected(int percent, ChargingState charging) => (ConnectionState.Connected, percent, charging);

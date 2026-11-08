@@ -6,7 +6,6 @@ public class FollowUpScheduleTests
 {
     private const int FirstDelayMs = 1000;
     private const int SecondDelayMs = 5000;
-    private const int StepCount = 25;
 
     private static BatteryStatus Status(ConnectionState connection) =>
         TestData.Status(connection == ConnectionState.Connected ? 80 : null, ChargingState.Unknown, connection);
@@ -58,14 +57,21 @@ public class FollowUpScheduleTests
     }
 
     [Fact]
-    public void Past_the_last_step_the_follow_up_stops()
+    public void A_mouse_that_never_connects_is_read_after_1_s_then_5_s_for_a_minute_then_10_s_15_s_and_30_s_for_a_minute_each()
     {
-        var schedule = StartedSchedule(out var generation);
+        int[] OneMinuteOf(int delayMs) => Enumerable.Repeat(delayMs, 60_000 / delayMs).ToArray();
+        int[] expectedDelaysMs = [FirstDelayMs, .. OneMinuteOf(5000), .. OneMinuteOf(10_000), .. OneMinuteOf(15_000), .. OneMinuteOf(30_000)];
 
-        for (var step = 1; step < StepCount; step++)
-            Assert.NotNull(schedule.Finish(generation, ran: true, status: null));
+        Assert.Equal(expectedDelaysMs, DelaysUntilTheFollowUpStops());
+    }
 
-        Assert.Null(schedule.Finish(generation, ran: true, status: null));
+    private static List<int> DelaysUntilTheFollowUpStops()
+    {
+        var schedule = new FollowUpSchedule();
+        var delays = new List<int> { schedule.Restart() };
+        while (schedule.Finish(schedule.Generation, ran: true, status: null) is { } delay)
+            delays.Add(delay);
+        return delays;
     }
 
     [Fact]

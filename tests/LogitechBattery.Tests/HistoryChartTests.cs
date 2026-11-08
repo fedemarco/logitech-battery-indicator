@@ -87,6 +87,22 @@ public sealed class HistoryChartTests
     }
 
     [Fact]
+    public void A_record_exactly_at_the_start_of_the_window_is_kept()
+    {
+        var chart = Day(Record(HistoryChart.Day, 90));
+
+        Assert.Equal([90], chart.Points.Select(point => point.Percent));
+    }
+
+    [Fact]
+    public void A_record_exactly_at_now_is_kept()
+    {
+        var chart = Day(Record(TimeSpan.Zero, 90));
+
+        Assert.Equal([90], chart.Points.Select(point => point.Percent));
+    }
+
+    [Fact]
     public void The_week_window_keeps_records_the_day_window_drops()
     {
         var records = new[] { Record(TimeSpan.FromDays(3), 90), Record(TimeSpan.FromHours(1), 40) };
@@ -103,20 +119,35 @@ public sealed class HistoryChartTests
         Assert.Equal([55], chart.Points.Select(point => point.Percent));
     }
 
-    [Theory]
-    [InlineData(2026, 3, 29, 2)]  // spring forward: 02:00 becomes 03:00
-    [InlineData(2026, 10, 25, 2)] // fall back: 03:00 becomes 02:00
-    public void Hour_ticks_fall_every_6_local_hours_on_a_DST_change_day(int year, int month, int day, int transitionHour)
+    [Fact]
+    public void Hour_ticks_on_the_spring_forward_day_stay_on_the_local_hours()
     {
-        var zone = ZoneWithDst(transitionHour);
-        var now = new DateTimeOffset(year, month, day, 20, 0, 0, TimeSpan.Zero);
+        var zone = ZoneWithDst(springForwardHour: 2); // Sunday 29 March: 02:00 becomes 03:00
+        var now = new DateTimeOffset(2026, 3, 29, 20, 0, 0, TimeSpan.Zero);
 
         var ticks = HistoryChart.HourTicks(now, zone);
 
-        Assert.NotEmpty(ticks);
-        Assert.All(ticks, tick => Assert.Contains(TimeZoneInfo.ConvertTime(tick.Time, zone).Hour, new[] { 0, 6, 12, 18 }));
-        Assert.Equal(ticks.Select(tick => tick.Time).Order(), ticks.Select(tick => tick.Time));
+        Assert.Equal(["00", "06", "12", "18"], ticks.Select(tick => tick.Label));
+        Assert.Equal(
+            [Utc(2026, 3, 28, 23), Utc(2026, 3, 29, 4), Utc(2026, 3, 29, 10), Utc(2026, 3, 29, 16)],
+            ticks.Select(tick => tick.Time));
     }
+
+    [Fact]
+    public void Hour_ticks_on_the_fall_back_day_stay_on_the_local_hours()
+    {
+        var zone = ZoneWithDst(springForwardHour: 2); // Sunday 25 October: 03:00 becomes 02:00
+        var now = new DateTimeOffset(2026, 10, 25, 20, 0, 0, TimeSpan.Zero);
+
+        var ticks = HistoryChart.HourTicks(now, zone);
+
+        Assert.Equal(["00", "06", "12", "18"], ticks.Select(tick => tick.Label));
+        Assert.Equal(
+            [Utc(2026, 10, 24, 22), Utc(2026, 10, 25, 5), Utc(2026, 10, 25, 11), Utc(2026, 10, 25, 17)],
+            ticks.Select(tick => tick.Time));
+    }
+
+    private static DateTimeOffset Utc(int year, int month, int day, int hour) => new(year, month, day, hour, 0, 0, TimeSpan.Zero);
 
     [Fact]
     public void Hour_ticks_fall_every_6_local_hours()
