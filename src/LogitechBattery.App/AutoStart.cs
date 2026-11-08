@@ -43,7 +43,10 @@ internal static class AutoStart
         try
         {
             if (Command is not { } command)
+            {
+                AppLog.Write("Enabling start with Windows failed: the path of the exe is unknown");
                 return false;
+            }
             using var runKey = Registry.CurrentUser.CreateSubKey(RunKey);
             runKey.SetValue(ValueName, command);
             using var approvedKey = Registry.CurrentUser.OpenSubKey(StartupApprovedKey, writable: true);
@@ -75,11 +78,11 @@ internal static class AutoStart
     {
         try
         {
+            // Only the real app registers itself (not e.g. dotnet.exe during development), and it must not even create its key.
+            if (!string.Equals(Path.GetFileName(Environment.ProcessPath), ExeName, StringComparison.OrdinalIgnoreCase))
+                return;
             using var appKey = Registry.CurrentUser.CreateSubKey(AppSettingsKey);
             if (appKey.GetValue(InitializedValue) is not null)
-                return;
-            // Only the real app registers itself (not e.g. dotnet.exe during development).
-            if (!string.Equals(Path.GetFileName(Environment.ProcessPath), ExeName, StringComparison.OrdinalIgnoreCase))
                 return;
             if (Enable())
                 appKey.SetValue(InitializedValue, 1, RegistryValueKind.DWord); // retried next start if writing failed

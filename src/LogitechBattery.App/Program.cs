@@ -36,9 +36,23 @@ internal static class Program
         var version = AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()) ?? "unknown";
         var mode = useMock ? "mock" : "HID++";
         AppLog.Write($"Started LogitechBattery {version} ({mode})");
-        Application.Run(useMock
-            ? new TrayApplicationContext(new MockBatteryProvider(), history: null) // simulated readings must never reach the real file
-            : new TrayApplicationContext(new HidPpBatteryProvider(), OpenHistory()));
+        Application.Run(CreateTrayContext(useMock));
+    }
+
+    // ThreadException only sees exceptions inside the message loop, so a failing constructor must be logged here.
+    private static TrayApplicationContext CreateTrayContext(bool useMock)
+    {
+        try
+        {
+            return useMock
+                ? new TrayApplicationContext(new MockBatteryProvider(), history: null) // simulated readings must never reach the real file
+                : new TrayApplicationContext(new HidPpBatteryProvider(), OpenHistory());
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write($"Startup failed: {ex}");
+            throw;
+        }
     }
 
     private static BatteryHistory OpenHistory()

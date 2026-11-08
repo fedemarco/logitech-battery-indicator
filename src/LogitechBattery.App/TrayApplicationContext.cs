@@ -114,8 +114,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             if (AutoStart.IsEnabled())
                 AutoStart.Disable();
-            else
-                AutoStart.Enable(); // also rewrites a stale path and clears a Task Manager "disabled"
+            else if (!AutoStart.Enable()) // also rewrites a stale path and clears a Task Manager "disabled"
+                MessageBox.Show(
+                    "Couldn't turn on Start with Windows. The reason is in log.txt.",
+                    "Logitech Battery",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
         };
         return startItem;
     }
@@ -282,8 +286,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _overlay = null;
             _overlayClosedAtMs = Environment.TickCount64;
         };
-        _overlay = overlay;
         overlay.Show();
+        _overlay = overlay; // after Show, so a failing Show leaves no half-open panel behind
     }
 
     private void ReplaceIcon(TrayIndicator indicator)

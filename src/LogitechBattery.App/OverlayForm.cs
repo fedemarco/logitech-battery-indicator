@@ -190,7 +190,8 @@ internal sealed class OverlayForm : Form
             plot.Left + (float)((point.Time - (now - _window)) / _window) * plot.Width,
             plot.Bottom - point.Percent / 100f * plot.Height);
 
-        using var solidPen = new Pen(LineColor, 2 * DpiScale) { LineJoin = LineJoin.Round };
+        // Segments are drawn one by one, so round caps (not a line join) hide the notches at the bends.
+        using var solidPen = new Pen(LineColor, 2 * DpiScale) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         using var dashedPen = new Pen(LineColor, 1.5f * DpiScale) { DashStyle = DashStyle.Dash };
         g.SetClip(plot);
         foreach (var join in _chart.Joins)

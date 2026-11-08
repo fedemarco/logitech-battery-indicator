@@ -16,14 +16,19 @@ internal static class ReceiverNotifications
     private const int ConnectionFlagsOffset = 4;
     private const byte LinkNotEstablished = 0x40;
 
-    public static bool HasWireless(ReadOnlySpan<byte> flags) => (flags[WirelessFlagByte] & WirelessFlagBit) != 0;
-
-    /// <summary>The same flags with wireless notifications on; every other flag is kept.</summary>
-    public static byte[] WithWireless(ReadOnlySpan<byte> flags)
+    /// <summary>
+    /// The same flags with wireless notifications on; every other flag is kept. False when nothing needs writing:
+    /// the flag is already on, or the receiver answered with fewer than <see cref="FlagsLength"/> flag bytes.
+    /// </summary>
+    public static bool TryEnableWireless(ReadOnlySpan<byte> flags, out byte[] updated)
     {
-        var updated = flags[..FlagsLength].ToArray();
+        updated = [];
+        if (flags.Length < FlagsLength || (flags[WirelessFlagByte] & WirelessFlagBit) != 0)
+            return false;
+
+        updated = flags[..FlagsLength].ToArray();
         updated[WirelessFlagByte] |= WirelessFlagBit;
-        return updated;
+        return true;
     }
 
     /// <summary>Recognizes the receiver's device connection notification (sent when the mouse wakes, sleeps or is switched on or off).</summary>

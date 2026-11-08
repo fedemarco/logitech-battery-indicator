@@ -29,18 +29,24 @@ public class ReceiverNotificationsTests
         Assert.False(ReceiverNotifications.TryReadConnection([0x10, 0x01, 0x8F, 0x06, 0x1A, 0x08, 0x00], out _, out _));
 
     [Fact]
-    public void Wireless_flag_is_off_in_empty_flags() =>
-        Assert.False(ReceiverNotifications.HasWireless([0x00, 0x00, 0x00]));
+    public void Enabling_wireless_sets_only_that_bit()
+    {
+        Assert.True(ReceiverNotifications.TryEnableWireless([0x00, 0x00, 0x00], out var updated));
+        Assert.Equal([0x00, 0x01, 0x00], updated);
+    }
 
     [Fact]
-    public void Wireless_flag_is_bit_0_of_the_middle_byte() =>
-        Assert.True(ReceiverNotifications.HasWireless([0x00, 0x01, 0x00]));
+    public void Enabling_wireless_keeps_the_other_flags()
+    {
+        Assert.True(ReceiverNotifications.TryEnableWireless([0x08, 0x00, 0x02], out var updated));
+        Assert.Equal([0x08, 0x01, 0x02], updated);
+    }
 
     [Fact]
-    public void Enabling_wireless_sets_only_that_bit() =>
-        Assert.Equal([0x00, 0x01, 0x00], ReceiverNotifications.WithWireless([0x00, 0x00, 0x00]));
+    public void Nothing_is_written_when_wireless_is_already_on() =>
+        Assert.False(ReceiverNotifications.TryEnableWireless([0x00, 0x01, 0x00], out _));
 
     [Fact]
-    public void Enabling_wireless_keeps_the_other_flags() =>
-        Assert.Equal([0x08, 0x01, 0x02], ReceiverNotifications.WithWireless([0x08, 0x00, 0x02]));
+    public void Nothing_is_written_when_the_receiver_answers_with_fewer_than_three_flag_bytes() =>
+        Assert.False(ReceiverNotifications.TryEnableWireless([0x00, 0x00], out _));
 }

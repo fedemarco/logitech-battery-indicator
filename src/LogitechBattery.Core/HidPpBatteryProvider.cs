@@ -189,11 +189,10 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
             if (read.Response is not { } response)
                 return; // not a receiver (e.g. the cable answers with an error)
 
-            var flags = HidPpMessage.ParamsOf(response);
-            if (ReceiverNotifications.HasWireless(flags))
+            if (!ReceiverNotifications.TryEnableWireless(HidPpMessage.ParamsOf(response), out var updatedFlags))
                 return;
 
-            var write = HidPpMessage.BuildSetRegister(HidPpMessage.ReceiverIndex, ReceiverNotifications.FlagsRegister, ReceiverNotifications.WithWireless(flags));
+            var write = HidPpMessage.BuildSetRegister(HidPpMessage.ReceiverIndex, ReceiverNotifications.FlagsRegister, updatedFlags);
             var written = channel.Exchange(write, DiscoveryTimeout, ct);
             AppLog.Write(written.Response is null ? "Receiver: enabling wireless notifications failed" : "Receiver: wireless notifications enabled");
         }
