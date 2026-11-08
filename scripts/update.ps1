@@ -28,9 +28,10 @@ try {
         $installed = "release $tag"
     }
     else {
-        $json = gh run list -R $Repo -w build.yml -b main --status success -L 1 --json databaseId,headSha,displayTitle
+        # Pull request runs never count: a fork can open a PR from a branch that is also called main.
+        $json = gh run list -R $Repo -w build.yml -b main --status success -L 10 --json databaseId,headSha,displayTitle,event
         if ($LASTEXITCODE -ne 0) { throw 'Failed to list workflow runs. Are you logged in (gh auth login)?' }
-        $runs = @($json | ConvertFrom-Json)
+        $runs = @($json | ConvertFrom-Json | Where-Object { $_.event -ne 'pull_request' })
         if ($runs.Count -eq 0) { throw 'No successful dev build found (artifacts expire after 1 day; push to main or re-run the workflow).' }
         $run = $runs[0]
         gh run download $run.databaseId -R $Repo -n LogitechBattery-win-x64 -D $tmp
