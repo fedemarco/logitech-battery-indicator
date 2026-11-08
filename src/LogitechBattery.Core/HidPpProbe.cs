@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text;
 using HidSharp;
@@ -15,14 +14,8 @@ public sealed class HidPpProbe
     private const string ReportFileName = "probe.txt";
     private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(1);
 
-    // Other battery features, probed only to find out what a device offers.
-    private const ushort BatteryStatusFeatureId = 0x1000;
-    private const int BatteryStatusGetStatusFunction = 0;
-    private const ushort BatteryVoltageFeatureId = 0x1001;
-    private const int BatteryVoltageGetVoltageFunction = 0;
-
-    /// <summary>A device index on the writer stream, plus the reports every collection of the device delivers.</summary>
-    private readonly record struct DeviceLink(HidStream Writer, BlockingCollection<byte[]> Reports, byte DeviceIndex);
+    /// <summary>A device index on an open channel.</summary>
+    private readonly record struct DeviceLink(HidPpChannel Channel, byte DeviceIndex);
 
     private readonly StringBuilder _log = new();
 
@@ -55,7 +48,7 @@ public sealed class HidPpProbe
         {
             Log("");
             Log($"== Physical device {device.Key}");
-            try { ProbeDevice(device.Collections, device.LongCollection); }
+            try { ProbeDevice(device); }
             catch (Exception ex) { Log($"ERROR probing device: {ex.Message}"); }
         }
     }
@@ -79,64 +72,28 @@ public sealed class HidPpProbe
 
     private static string UsagesOrError(HidDevice device)
     {
-        try { return string.Join(", ", HidPpDevices.ReadUsages(device).Select(u => $"{HidPpDevices.UsagePage(u):X4}:{u & 0xFFFF:X4}")); }
+        try { return string.Join(", ", HidPpDevices.ReadUsages(device).Select(usage => $"{HidPpDevices.UsagePage(usage):X4}:{usage & 0xFFFF:X4}")); }
         catch (Exception ex) { return $"<error: {ex.Message}>"; }
     }
 
-    private void ProbeDevice(List<HidDevice> collections, HidDevice longCollection)
+    private void ProbeDevice(HidPpDevice device)
     {
-        var streams = new List<HidStream>();
-        var reports = new BlockingCollection<byte[]>();
-        try
+        if (HidPpChannel.Open(device, onReport: (_, _) => { }) is not { } channel)
         {
-            HidStream? writer = null;
-            foreach (var collection in collections)
-            {
-                if (!collection.TryOpen(out var stream))
-                {
-                    Log($"cannot open {collection.DevicePath}");
-                    continue;
-                }
-                streams.Add(stream);
-                if (collection == longCollection)
-                    writer = stream;
-                new Thread(() => ReadLoop(stream, reports)) { IsBackground = true }.Start();
-            }
-            if (writer is null)
-                return;
+            Log($"cannot open {device.LongCollection.DevicePath}");
+            return;
+        }
 
+        using (channel)
+        {
             foreach (var deviceIndex in HidPpMessage.CableDeviceIndexes.Concat(HidPpMessage.ReceiverDeviceIndexes))
             {
                 Log("");
                 Log($"-- devIdx {deviceIndex:X2}");
-                try { ProbeIndex(new DeviceLink(writer, reports, deviceIndex)); }
+                try { ProbeIndex(new DeviceLink(channel, deviceIndex)); }
                 catch (Exception ex) { Log($"ERROR devIdx {deviceIndex:X2}: {ex.Message}"); }
             }
         }
-        finally
-        {
-            foreach (var stream in streams)
-                try { stream.Dispose(); } catch { }
-        }
-    }
-
-    private static void ReadLoop(HidStream stream, BlockingCollection<byte[]> sink)
-    {
-        try
-        {
-            var buffer = new byte[stream.Device.GetMaxInputReportLength()];
-            while (true)
-            {
-                try
-                {
-                    var length = stream.Read(buffer, 0, buffer.Length);
-                    if (length > 0)
-                        sink.Add(buffer[..length]);
-                }
-                catch (TimeoutException) { } // no input for a while (HidSharp's ReadTimeout): keep listening
-            }
-        }
-        catch { /* stream disposed */ }
     }
 
     private void ProbeIndex(DeviceLink link)
@@ -152,20 +109,8 @@ public sealed class HidPpProbe
 
         if (DescribeFeature(link, DeviceName.FeatureId) is { } nameFeatureIndex)
             ReportDeviceName(link, nameFeatureIndex);
-        if (DescribeFeature(link, UnifiedBattery.FeatureId) is { } unifiedFeatureIndex)
-            ReportUnifiedBattery(link, unifiedFeatureIndex);
-        if (DescribeFeature(link, BatteryStatusFeatureId) is { } statusFeatureIndex
-            && Call(link, statusFeatureIndex, BatteryStatusGetStatusFunction) is { } status)
-        {
-            var p = HidPpMessage.ParamsOf(status);
-            Log($"  BatteryStatus: {p[0]}% next {p[1]}% status {p[2]}");
-        }
-        if (DescribeFeature(link, BatteryVoltageFeatureId) is { } voltageFeatureIndex
-            && Call(link, voltageFeatureIndex, BatteryVoltageGetVoltageFunction) is { } voltage)
-        {
-            var p = HidPpMessage.ParamsOf(voltage);
-            Log($"  BatteryVoltage: {(p[0] << 8) | p[1]} mV flags {p[2]:X2}");
-        }
+        if (DescribeFeature(link, UnifiedBattery.FeatureId) is { } batteryFeatureIndex)
+            ReportUnifiedBattery(link, batteryFeatureIndex);
     }
 
     /// <summary>Logs whether the device supports <paramref name="featureId"/>; returns its feature index if so.</summary>
@@ -177,14 +122,15 @@ public sealed class HidPpProbe
             Log($"  feature {featureId:X4}: no answer");
             return null;
         }
-        var p = HidPpMessage.ParamsOf(response);
-        if (p[0] == 0)
+        var featureParams = HidPpMessage.ParamsOf(response);
+        var (featureIndex, featureType, featureVersion) = (featureParams[0], featureParams[1], featureParams[2]);
+        if (featureIndex == 0)
         {
             Log($"  feature {featureId:X4}: not supported");
             return null;
         }
-        Log($"  feature {featureId:X4}: index {p[0]:X2} type {p[1]:X2} version {p[2]}");
-        return p[0];
+        Log($"  feature {featureId:X4}: index {featureIndex:X2} type {featureType:X2} version {featureVersion}");
+        return featureIndex;
     }
 
     private void ReportDeviceName(DeviceLink link, byte featureIndex)
@@ -193,10 +139,10 @@ public sealed class HidPpProbe
         if (count == 0)
             return;
 
-        var chunks = DeviceName.ReadChunks(DeviceName.LimitLength(count), position =>
+        var length = DeviceName.LimitLength(count);
+        var chunks = DeviceName.ReadChunks(length, position =>
             Call(link, featureIndex, DeviceName.GetNameFunction, position) is { } chunk ? HidPpMessage.ParamsOf(chunk) : null);
-        var name = string.Concat(chunks.Select(chunk => Encoding.ASCII.GetString(chunk).TrimEnd('\0')));
-        Log($"  device name: \"{name}\"");
+        Log($"  device name: \"{DeviceName.Assemble(length, chunks)}\"");
     }
 
     private void ReportUnifiedBattery(DeviceLink link, byte featureIndex)
@@ -213,34 +159,17 @@ public sealed class HidPpProbe
     private byte[]? Call(DeviceLink link, byte featureIndex, int function, params byte[] parameters) =>
         Request(link, HidPpMessage.BuildRequest(link.DeviceIndex, featureIndex, function, HidPpMessage.SoftwareId, parameters));
 
-    /// <summary>Sends a read-only request; returns the matching response report or null (error/timeout, logged).</summary>
+    /// <summary>Sends a read-only request; returns the response report or null (error or timeout, logged).</summary>
     private byte[]? Request(DeviceLink link, byte[] request)
     {
-        while (link.Reports.TryTake(out _)) { } // drop stale reports from earlier requests
         Log($"  → {HidPpMessage.ToHex(request)}");
-        link.Writer.Write(request);
-
-        var deadline = DateTime.UtcNow + ResponseTimeout;
-        while (link.Reports.TryTake(out var report, Math.Max(0, (int)(deadline - DateTime.UtcNow).TotalMilliseconds)))
+        var answer = link.Channel.Exchange(request, ResponseTimeout, CancellationToken.None);
+        if (answer.Response is { } response)
         {
-            var reply = HidPpMessage.Classify(request, report);
-            switch (reply.Kind)
-            {
-                case HidPpReplyKind.Response:
-                    Log($"  ← {HidPpMessage.ToHex(report)}");
-                    return report;
-                case HidPpReplyKind.Error20:
-                    Log($"  ← {HidPpMessage.ToHex(report)}   HID++ 2.0 error 0x{reply.ErrorCode:X2}");
-                    return null;
-                case HidPpReplyKind.Error10:
-                    Log($"  ← {HidPpMessage.ToHex(report)}   HID++ 1.0 error 0x{reply.ErrorCode:X2}");
-                    return null;
-                case HidPpReplyKind.None:
-                    Log($"  ← {HidPpMessage.ToHex(report)}   (unsolicited, skipped)");
-                    break;
-            }
+            Log($"  ← {HidPpMessage.ToHex(response)}");
+            return response;
         }
-        Log("  ← timeout");
+        Log(answer.ErrorCode is { } errorCode ? $"  ← HID++ 2.0 error 0x{errorCode:X2}" : "  ← no answer (timeout or HID++ 1.0 error)");
         return null;
     }
 }

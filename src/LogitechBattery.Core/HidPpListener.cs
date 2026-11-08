@@ -1,6 +1,5 @@
 using System.Reflection;
 using System.Text;
-using System.Text.RegularExpressions;
 using HidSharp;
 using LogitechBattery.HidPp;
 
@@ -14,11 +13,9 @@ namespace LogitechBattery;
 public sealed class HidPpListener
 {
     private const string ReportFileName = "listen.txt";
-    private const byte NotificationFlagsRegister = 0x00;
-    private const int WriteTimeoutMs = 200;
 
     private readonly StringBuilder _log = new();
-    private readonly Dictionary<string, HidStream> _openStreams = new();
+    private readonly Dictionary<string, HidPpChannel> _channels = new();
 
     /// <summary>Listens until <paramref name="waitUntilStopped"/> returns; returns the path of the report file.</summary>
     public static string Run(Action waitUntilStopped)
@@ -54,91 +51,77 @@ public sealed class HidPpListener
     {
         Log($"LogitechBattery listen {AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly())}  {Environment.OSVersion}");
         DeviceList.Local.Changed += OnUsbDevicesChanged;
-        OpenNewCollections();
+        OpenNewDevices();
     }
 
     private void Stop()
     {
         DeviceList.Local.Changed -= OnUsbDevicesChanged;
-        List<HidStream> streams;
-        lock (_openStreams)
-            streams = _openStreams.Values.ToList();
-        foreach (var stream in streams)
-            try { stream.Dispose(); } catch { }
+        lock (_channels)
+        {
+            foreach (var channel in _channels.Values)
+                channel.Dispose();
+            _channels.Clear();
+        }
         Log("stopped");
     }
 
     private void OnUsbDevicesChanged(object? sender, DeviceListChangedEventArgs e)
     {
         Log("USB devices changed");
-        OpenNewCollections();
+        OpenNewDevices();
     }
 
-    private void OpenNewCollections()
+    private void OpenNewDevices()
     {
-        lock (_openStreams)
+        lock (_channels)
         {
-            foreach (var device in HidPpDevices.Find())
-                foreach (var collection in device.Collections.Where(c => !_openStreams.ContainsKey(c.DevicePath)))
-                    Open(collection);
+            ForgetClosedChannels();
+            foreach (var device in HidPpDevices.Find().Where(device => !_channels.ContainsKey(device.Key)))
+                Open(device);
         }
     }
 
-    private void Open(HidDevice collection)
+    private void ForgetClosedChannels()
     {
-        var label = Label(collection);
-        if (!collection.TryOpen(out var stream))
+        foreach (var (key, channel) in _channels.Where(entry => entry.Value.IsClosed).ToList())
         {
-            Log($"{label}  cannot open");
+            Log($"{channel.ProductId:X4}  closed");
+            channel.Dispose();
+            _channels.Remove(key);
+        }
+    }
+
+    private void Open(HidPpDevice device)
+    {
+        var productId = device.LongCollection.ProductID;
+        if (HidPpChannel.Open(device, OnReport) is not { } channel)
+        {
+            Log($"{productId:X4}  cannot open");
             return;
         }
-        _openStreams[collection.DevicePath] = stream;
-        Log($"{label}  opened");
-        new Thread(() => ReadLoop(collection, stream, label)) { IsBackground = true }.Start();
+        _channels[device.Key] = channel;
+        Log($"{productId:X4}  opened");
 
-        if (collection.GetMaxOutputReportLength() == HidPpMessage.ShortLength)
-            RequestNotificationFlags(stream, label);
+        if (channel.HasShortCollection)
+            RequestNotificationFlags(channel);
     }
 
-    /// <summary>Read-only: the answer (logged by the read loop) shows which notifications the receiver forwards.</summary>
-    private void RequestNotificationFlags(HidStream stream, string label)
+    /// <summary>Read-only: the answer (logged like every report) shows which notifications the receiver forwards.</summary>
+    private void RequestNotificationFlags(HidPpChannel channel)
     {
-        var request = HidPpMessage.BuildGetRegister(HidPpMessage.ReceiverIndex, NotificationFlagsRegister);
-        Log($"{label}  → {HidPpMessage.ToHex(request)}  (read notification flags)");
+        var request = HidPpMessage.BuildGetRegister(HidPpMessage.ReceiverIndex, ReceiverNotifications.FlagsRegister);
+        Log($"{channel.ProductId:X4}  → {HidPpMessage.ToHex(request)}  (read notification flags)");
         try
         {
-            stream.WriteTimeout = WriteTimeoutMs;
-            stream.Write(request);
+            channel.Exchange(request, DeviceDiscovery.Timeout, CancellationToken.None);
         }
-        catch (Exception ex) when (ex is IOException or TimeoutException) { Log($"{label}  write failed: {ex.Message}"); }
-    }
-
-    private void ReadLoop(HidDevice collection, HidStream stream, string label)
-    {
-        try
+        catch (Exception ex) when (ex is IOException or TimeoutException)
         {
-            var buffer = new byte[collection.GetMaxInputReportLength()];
-            while (true)
-            {
-                try
-                {
-                    var length = stream.Read(buffer, 0, buffer.Length);
-                    if (length > 0)
-                        Log($"{label}  ← {HidPpMessage.ToHex(buffer[..length])}");
-                }
-                catch (TimeoutException) { } // no input for a while (HidSharp's ReadTimeout): keep listening
-            }
-        }
-        catch (Exception ex) { Log($"{label}  closed ({ex.GetType().Name})"); }
-        finally
-        {
-            lock (_openStreams)
-                _openStreams.Remove(collection.DevicePath);
-            try { stream.Dispose(); } catch { }
+            Log($"{channel.ProductId:X4}  write failed: {ex.Message}");
         }
     }
 
-    // e.g. "C54D col01": the product id tells receiver from cable, the collection number short from long reports.
-    private static string Label(HidDevice collection) =>
-        $"{collection.ProductID:X4} {Regex.Match(collection.DevicePath, @"col\d+", RegexOptions.IgnoreCase).Value.ToLowerInvariant()}";
+    // The report id tells the collection: 0x10 short, 0x11 long.
+    private void OnReport(HidPpChannel channel, byte[] report) => Log($"{channel.ProductId:X4}  ← {HidPpMessage.ToHex(report)}");
 }
