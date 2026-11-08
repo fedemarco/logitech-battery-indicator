@@ -17,23 +17,47 @@ jobs:
   # Every run: the tests on Windows too, where file sharing, paths and line endings behave as on the user's PC.
   test-windows:
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
       - run: dotnet test
+      - run: dotnet publish src/LogitechBattery.App -c Release -o out
+      # The published exe, started with simulated readings, must keep running and log nothing but the start line and notifications.
+      - name: Smoke test (the mock app must start and keep running)
+        continue-on-error: true # phase 1: reports only; make it blocking after 3 green runs in a row
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:LOCALAPPDATA 'LogitechBattery\log.txt'
+          if (Test-Path $log) { throw "The tests wrote to the real log: $log" }
+          Write-Host "Session $((Get-Process -Id $PID).SessionId), interactive $([Environment]::UserInteractive), explorer $([bool](Get-Process explorer -ErrorAction SilentlyContinue))"
+          $start = Get-Date
+          $app = Start-Process out\LogitechBattery.exe -ArgumentList '--mock' -PassThru
+          Start-Sleep -Seconds 30
+          $running = -not $app.HasExited
+          if ($running) { Stop-Process -Id $app.Id -Force }
+          $lines = @(Get-Content $log -ErrorAction SilentlyContinue)
+          $lines | Write-Host
+          $crashes = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 2; StartTime = $start } -ErrorAction SilentlyContinue |
+              Where-Object Message -match 'LogitechBattery')
+          if (-not $running) { throw "The app exited (exit code $($app.ExitCode))" }
+          if ($crashes) { throw "Windows logged an error: $($crashes[0].Message)" }
+          if ($lines.Count -eq 0 -or $lines[0] -notmatch '  Started LogitechBattery \S+ \(mock\)$') { throw 'No start line in the log' }
+          $unexpected = @($lines | Select-Object -Skip 1 | Where-Object { $_ -notmatch '  Notification: ' })
+          if ($unexpected) { throw "Unexpected log lines:`n$($unexpected -join "`n")" }
 
   # Pushes to main / manual runs: unversioned dev build (<VersionPrefix>-dev.<run>+<sha>).
   dev:
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
-      - run: dotnet test
       - run: dotnet publish src/LogitechBattery.App -c Release -p:VersionSuffix=dev.${{ github.run_number }} -o out
       - uses: actions/upload-artifact@v7
         with:
@@ -46,6 +70,7 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     needs: test-windows # never release a build whose tests fail on Windows
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -60,7 +85,6 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME does not match VersionPrefix $prefix in Directory.Build.props"
             exit 1
           fi
-      - run: dotnet test
       - run: dotnet publish src/LogitechBattery.App -c Release -p:Version=${GITHUB_REF_NAME#v} -o out
       - run: gh release create "$GITHUB_REF_NAME" out/LogitechBattery.exe THIRD-PARTY-NOTICES.md --generate-notes
         env:
