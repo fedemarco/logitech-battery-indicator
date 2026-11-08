@@ -17,6 +17,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     private volatile BatteryTarget? _target;
     private ConnectionState? _lastState;
     private volatile bool _rediscover = true;
+    private volatile bool _reopen;
     private string? _lastOpenFailure;
 
     /// <summary>Raised (on a background thread) when the reading may have changed: USB devices added or removed, the mouse connecting to or disconnecting from the receiver, or a battery event.</summary>
@@ -25,6 +26,12 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     public HidPpBatteryProvider() => DeviceList.Local.Changed += OnUsbDevicesChanged;
 
     public Task<BatteryStatus> ReadAsync(CancellationToken cancellationToken = default) => Task.Run(() => Read(cancellationToken), cancellationToken);
+
+    /// <summary>
+    /// Closes and opens every device again at the next read. Call after the PC resumed: the receiver may have forgotten
+    /// its notification flag (as after a replug) while the handles still look valid, and nothing else would notice.
+    /// </summary>
+    public void ReopenDevices() => _reopen = true;
 
     private void OnUsbDevicesChanged(object? sender, DeviceListChangedEventArgs e)
     {
@@ -72,6 +79,12 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     private BatteryStatus? ReadCore(CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.Now;
+        if (_reopen)
+        {
+            _reopen = false;
+            CloseAllChannels();
+            _rediscover = true;
+        }
         if (_rediscover || _channels.Any(channel => channel.IsClosed))
         {
             ForgetTarget();
@@ -132,6 +145,14 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         _channels.Remove(target.Channel);
         ForgetTarget();
         _rediscover = true;
+    }
+
+    private void CloseAllChannels()
+    {
+        foreach (var channel in _channels)
+            channel.Dispose();
+        _channels.Clear();
+        ForgetTarget();
     }
 
     private void ForgetTarget() => _target = null;

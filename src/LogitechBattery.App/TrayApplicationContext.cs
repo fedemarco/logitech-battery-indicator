@@ -1,4 +1,5 @@
 using System.Reflection;
+using Microsoft.Win32;
 using LogitechBattery.Battery;
 
 namespace LogitechBattery;
@@ -72,7 +73,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _timer = StartPollTimer(isSimulator ? MockPollIntervalMs : PollIntervalMs);
         _followUp.Tick += OnFollowUpTickAsync;
         if (provider is HidPpBatteryProvider hid)
+        {
             hid.ChangeDetected += OnChangeDetected;
+            SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        }
 
         Application.Idle += OnFirstIdle;
     }
@@ -183,6 +187,22 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         StartFollowUpTimer(_followUpSchedule.Restart());
     }, null);
+
+    // Raised on a system thread; it only sets a flag, writes the log and posts to the UI thread, like OnChangeDetected.
+    private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
+    {
+        switch (e.Mode)
+        {
+            case PowerModes.Suspend:
+                AppLog.Write("PC suspending");
+                break;
+            case PowerModes.Resume:
+                AppLog.Write("PC resumed");
+                (_provider as HidPpBatteryProvider)?.ReopenDevices();
+                OnChangeDetected(); // reads again after 1 s, then follows up like after any change
+                break;
+        }
+    }
 
     private async void OnFollowUpTickAsync(object? sender, EventArgs e)
     {
@@ -335,7 +355,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _exited = true;
         if (_provider is HidPpBatteryProvider hid)
+        {
             hid.ChangeDetected -= OnChangeDetected;
+            SystemEvents.PowerModeChanged -= OnPowerModeChanged; // static event: it would keep this object alive and run after exit
+        }
         _overlay?.Dispose();
         _overlay = null;
         _timer.Stop();
