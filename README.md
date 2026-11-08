@@ -4,6 +4,8 @@ A small Windows tray app that shows the battery level of a **Logitech PRO X2 SUP
 
 The tray icon shows the charge at a glance; hover it for the exact percentage. The app reads the mouse directly over Logitech's HID++ protocol, through the Lightspeed receiver or the USB cable.
 
+![Tray icon with its tooltip: battery percentage and state, and the app version](docs/tray-tooltip.png)
+
 > Not affiliated with or endorsed by Logitech. "Logitech" and "PRO X2 SUPERSTRIKE" are trademarks of Logitech.
 
 ## Features
@@ -15,6 +17,8 @@ The tray icon shows the charge at a glance; hover it for the exact percentage. T
 - **History panel** – left-click the tray icon for a 24 h / 7 day graph of the battery level and the time of the last charge.
 - **Time left** – an estimate of the hours left, based on how fast the battery drained over the last week.
 - **Lightweight and private** – no installer, no background service, no account, no telemetry and no network access. Everything stays on your PC.
+
+![History panel: current battery level, last charge, and a 24-hour graph of the battery level](docs/history-panel.png)
 
 ## Requirements
 
@@ -42,6 +46,8 @@ To update, exit the app from the tray menu, replace the exe with the new version
 | Right-click the tray icon | Menu: Start with Windows, Clear history…, Exit |
 
 Icon colors: green from 40 %, yellow from 20 %, red below 20 %. A separate "unknown" icon means the mouse is asleep, switched off or not found.
+
+![The tray icon: a green battery gauge](docs/tray-icon.png)
 
 ## Privacy and data
 
