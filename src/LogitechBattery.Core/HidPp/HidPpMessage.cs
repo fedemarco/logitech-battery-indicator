@@ -21,7 +21,7 @@ internal static class HidPpMessage
     public const int LongLength = 20;
     public const int ShortLength = 7;
 
-    /// <summary>Report id, device index, feature index, function and software id.</summary>
+    /// <summary>Report id, device index, feature index (or sub id) and function with software id (or register address).</summary>
     public const int HeaderLength = 4;
     public const int ParamsOffset = HeaderLength;
 
@@ -29,10 +29,10 @@ internal static class HidPpMessage
     public const byte SoftwareId = 0x0A;
 
     /// <summary>Device index used on the USB cable.</summary>
-    public static readonly byte[] CableDeviceIndexes = [0xFF];
+    public static readonly IReadOnlyList<byte> CableDeviceIndexes = [0xFF];
 
     /// <summary>Device indexes of the paired devices on a Lightspeed receiver.</summary>
-    public static readonly byte[] ReceiverDeviceIndexes = [1, 2, 3, 4, 5, 6];
+    public static readonly IReadOnlyList<byte> ReceiverDeviceIndexes = [1, 2, 3, 4, 5, 6];
 
     /// <summary>Device index that addresses the receiver itself.</summary>
     public const byte ReceiverIndex = 0xFF;
@@ -46,15 +46,21 @@ internal static class HidPpMessage
     private const byte SetRegisterSubId = 0x80;
     private const byte GetRegisterSubId = 0x81;
 
-    private const int DeviceIndexOffset = 1;
-    private const int FeatureIndexOffset = 2;
-    private const int FunctionOffset = 3;
+    // Bytes 0 and 1 are the same in both protocols. Byte 2 is the feature index (HID++ 2.0) or the sub id (HID++ 1.0);
+    // byte 3 is function and software id (2.0) or the register address (1.0). The names cover both.
+    public const int ReportIdOffset = 0;
+    public const int DeviceIndexOffset = 1;
+    private const int FeatureOrSubIdOffset = 2;
+    private const int FunctionOrAddressOffset = 3;
+    private const int FunctionShift = 4; // the function is the high nibble of byte 3, the software id the low one
+
+    // An error report is the longest answer to check: [id, dev, marker, feature, fn|sw, code].
     private const int MinReplyLength = 6;
 
     // Error reports carry the failed request after the marker: [id, dev, marker, feature, fn|sw, code].
     private const int ErrorMarkerOffset = 2;
     private const int ErrorFeatureOffset = 3;
-    private const int ErrorFunctionOffset = 4;
+    private const int ErrorFunctionOrAddressOffset = 4;
     private const int ErrorCodeOffset = 5;
     private const byte Error20Marker = 0xFF;
     private const byte Error10Marker = 0x8F;
@@ -67,10 +73,10 @@ internal static class HidPpMessage
         if (parameters.Length > LongLength - HeaderLength)
             throw new ArgumentException("Too many parameters.", nameof(parameters));
         var report = new byte[LongLength];
-        report[0] = LongId;
+        report[ReportIdOffset] = LongId;
         report[DeviceIndexOffset] = deviceIndex;
-        report[FeatureIndexOffset] = featureIndex;
-        report[FunctionOffset] = FunctionAndSoftwareId(function, softwareId);
+        report[FeatureOrSubIdOffset] = featureIndex;
+        report[FunctionOrAddressOffset] = FunctionAndSoftwareId(function, softwareId);
         parameters.CopyTo(report, ParamsOffset);
         return report;
     }
@@ -78,10 +84,10 @@ internal static class HidPpMessage
     /// <summary>A copy of a long request with another software id; a short (HID++ 1.0) request is returned unchanged, as its byte 3 is a register address.</summary>
     public static byte[] WithSoftwareId(byte[] request, byte softwareId)
     {
-        if (request[0] != LongId)
+        if (request[ReportIdOffset] != LongId)
             return request;
         var copy = (byte[])request.Clone();
-        copy[FunctionOffset] = (byte)((request[FunctionOffset] & ~SoftwareIdMask) | (softwareId & SoftwareIdMask));
+        copy[FunctionOrAddressOffset] = (byte)((request[FunctionOrAddressOffset] & ~SoftwareIdMask) | (softwareId & SoftwareIdMask));
         return copy;
     }
 
@@ -95,7 +101,7 @@ internal static class HidPpMessage
 
     /// <summary>HID++ 1.0 short "get register" request: reads a register without changing it.</summary>
     public static byte[] BuildGetRegister(byte deviceIndex, byte register) =>
-        [ShortId, deviceIndex, GetRegisterSubId, register, 0, 0, 0];
+        BuildShortRequest(deviceIndex, GetRegisterSubId, register, []);
 
     /// <summary>HID++ 1.0 short "set register" request: writes up to three value bytes.</summary>
     public static byte[] BuildSetRegister(byte deviceIndex, byte register, ReadOnlySpan<byte> value)
@@ -103,19 +109,22 @@ internal static class HidPpMessage
         var report = new byte[ShortLength];
         report[0] = ShortId;
         report[DeviceIndexOffset] = deviceIndex;
-        report[FeatureIndexOffset] = SetRegisterSubId;
-        report[FunctionOffset] = register;
+        report[FeatureOrSubIdOffset] = SetRegisterSubId;
+        report[FunctionOrAddressOffset] = register;
         value.CopyTo(report.AsSpan(ParamsOffset));
         return report;
     }
 
+    /// <summary>True for a short (HID++ 1.0) report or request.</summary>
+    public static bool IsShort(byte[] report) => report[ReportIdOffset] == ShortId;
+
     /// <summary>True for an unsolicited long report (software id 0) from the given device and feature: a notification, not an answer to anybody's request.</summary>
     public static bool IsEventFrom(byte[] report, byte deviceIndex, byte featureIndex) =>
         report.Length >= HeaderLength
-        && report[0] == LongId
+        && report[ReportIdOffset] == LongId
         && report[DeviceIndexOffset] == deviceIndex
-        && report[FeatureIndexOffset] == featureIndex
-        && (report[FunctionOffset] & SoftwareIdMask) == 0;
+        && report[FeatureOrSubIdOffset] == featureIndex
+        && (report[FunctionOrAddressOffset] & SoftwareIdMask) == 0;
 
     /// <summary>The parameter bytes of a report (up to the 20-byte long report size).</summary>
     public static byte[] ParamsOf(byte[] report) => report[ParamsOffset..Math.Min(report.Length, LongLength)];
@@ -125,7 +134,7 @@ internal static class HidPpMessage
     {
         if (request.Length < HeaderLength || report.Length < MinReplyLength || !IsFromSameDevice(request, report))
             return NotAnAnswer;
-        if (report[0] is not (ShortId or LongId))
+        if (report[ReportIdOffset] is not (ShortId or LongId))
             return NotAnAnswer;
 
         if (IsResponse(request, report))
@@ -139,19 +148,30 @@ internal static class HidPpMessage
 
     public static string ToHex(byte[] bytes) => BitConverter.ToString(bytes).Replace('-', ' ').ToLowerInvariant();
 
-    private static byte FunctionAndSoftwareId(int function, byte softwareId) => (byte)((function << 4) | (softwareId & SoftwareIdMask));
+    private static byte[] BuildShortRequest(byte deviceIndex, byte subId, byte address, ReadOnlySpan<byte> parameters)
+    {
+        var report = new byte[ShortLength];
+        report[ReportIdOffset] = ShortId;
+        report[DeviceIndexOffset] = deviceIndex;
+        report[FeatureOrSubIdOffset] = subId;
+        report[FunctionOrAddressOffset] = address;
+        parameters.CopyTo(report.AsSpan(ParamsOffset));
+        return report;
+    }
+
+    private static byte FunctionAndSoftwareId(int function, byte softwareId) => (byte)((function << FunctionShift) | (softwareId & SoftwareIdMask));
 
     private static bool IsFromSameDevice(byte[] request, byte[] report) => report[DeviceIndexOffset] == request[DeviceIndexOffset];
 
     private static bool IsResponse(byte[] request, byte[] report) =>
-        report[FeatureIndexOffset] == request[FeatureIndexOffset] && report[FunctionOffset] == request[FunctionOffset];
+        report[FeatureOrSubIdOffset] == request[FeatureOrSubIdOffset] && report[FunctionOrAddressOffset] == request[FunctionOrAddressOffset];
 
     private static bool IsError20(byte[] request, byte[] report) =>
         report[ErrorMarkerOffset] == Error20Marker && IsErrorFor(request, report);
 
     private static bool IsError10(byte[] request, byte[] report) =>
-        report[0] == ShortId && report[ErrorMarkerOffset] == Error10Marker && IsErrorFor(request, report);
+        report[ReportIdOffset] == ShortId && report[ErrorMarkerOffset] == Error10Marker && IsErrorFor(request, report);
 
     private static bool IsErrorFor(byte[] request, byte[] report) =>
-        report[ErrorFeatureOffset] == request[FeatureIndexOffset] && report[ErrorFunctionOffset] == request[FunctionOffset];
+        report[ErrorFeatureOffset] == request[FeatureOrSubIdOffset] && report[ErrorFunctionOrAddressOffset] == request[FunctionOrAddressOffset];
 }

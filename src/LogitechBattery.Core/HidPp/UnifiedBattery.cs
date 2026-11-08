@@ -30,7 +30,7 @@ internal static class UnifiedBattery
             ChargeComplete => ChargingState.Full,
             _ => ChargingState.Unknown,
         };
-        var percent = Math.Clamp((int)parameters[StateOfChargeIndex], 0, 100);
+        var percent = Math.Clamp((int)parameters[StateOfChargeIndex], 0, BatteryStatus.FullPercent);
         return new BatteryStatus(ConnectionState.Connected, percent, charging, readAt);
     }
 }

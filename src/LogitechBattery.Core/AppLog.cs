@@ -7,8 +7,8 @@ public static class AppLog
 {
     private const string FileName = "log.txt";
     private const string RotatedFileName = "log.old.txt";
-    private const long MaxBytes = 256 * 1024;
-    private const long HardLimitBytes = 1024 * 1024;
+    private const long RotateAtBytes = 256 * 1024;
+    private const long StopWritingAtBytes = 1024 * 1024; // only reached when rotation keeps failing
     private static readonly object Gate = new();
 
     public static void Write(string message)
@@ -31,7 +31,7 @@ public static class AppLog
     /// <summary>Moves a full log aside. Returns false when writing must stop because rotation is blocked and the file keeps growing.</summary>
     private static bool RotateIfNeeded(string file)
     {
-        if (!File.Exists(file) || new FileInfo(file).Length <= MaxBytes)
+        if (!File.Exists(file) || new FileInfo(file).Length <= RotateAtBytes)
             return true;
         try
         {
@@ -40,7 +40,7 @@ public static class AppLog
         }
         catch
         {
-            return new FileInfo(file).Length <= HardLimitBytes;
+            return new FileInfo(file).Length <= StopWritingAtBytes;
         }
     }
 }

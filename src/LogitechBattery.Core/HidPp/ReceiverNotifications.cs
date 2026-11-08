@@ -1,5 +1,8 @@
 namespace LogitechBattery.HidPp;
 
+/// <summary>A paired device's link to the receiver changed: it connected (<see cref="LinkEstablished"/>) or went away.</summary>
+internal readonly record struct DeviceConnection(byte DeviceIndex, bool LinkEstablished);
+
 /// <summary>HID++ 1.0 receiver notifications: the flags register that switches them on, and the device connection notification.</summary>
 internal static class ReceiverNotifications
 {
@@ -14,7 +17,7 @@ internal static class ReceiverNotifications
     private const byte ConnectionSubId = 0x41;
     private const int SubIdOffset = 2;
     private const int ConnectionFlagsOffset = 4;
-    private const byte LinkNotEstablished = 0x40;
+    private const byte LinkNotEstablishedBit = 0x40;
 
     /// <summary>
     /// The same flags with wireless notifications on; every other flag is kept. False when nothing needs writing:
@@ -31,14 +34,16 @@ internal static class ReceiverNotifications
         return true;
     }
 
-    /// <summary>Recognizes the receiver's device connection notification (sent when the mouse wakes, sleeps or is switched on or off).</summary>
-    public static bool TryReadConnection(byte[] report, out byte deviceIndex, out bool linkEstablished)
+    /// <summary>Recognizes the receiver's device connection notification (sent when the mouse wakes, sleeps or is switched on or off); null for any other report.</summary>
+    public static DeviceConnection? ReadConnection(byte[] report)
     {
         var isConnection = report.Length >= HidPpMessage.ShortLength
-            && report[0] == HidPpMessage.ShortId
+            && report[HidPpMessage.ReportIdOffset] == HidPpMessage.ShortId
             && report[SubIdOffset] == ConnectionSubId;
-        deviceIndex = isConnection ? report[1] : (byte)0;
-        linkEstablished = isConnection && (report[ConnectionFlagsOffset] & LinkNotEstablished) == 0;
-        return isConnection;
+        if (!isConnection)
+            return null;
+
+        var linkEstablished = (report[ConnectionFlagsOffset] & LinkNotEstablishedBit) == 0;
+        return new DeviceConnection(report[HidPpMessage.DeviceIndexOffset], linkEstablished);
     }
 }

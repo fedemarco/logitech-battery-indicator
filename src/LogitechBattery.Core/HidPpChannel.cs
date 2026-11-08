@@ -64,7 +64,7 @@ internal sealed class HidPpChannel : IDisposable
     }
 
     /// <summary>Sends a long (HID++ 2.0) or short (HID++ 1.0) request and waits for its response, an error or the timeout.</summary>
-    public HidPpAnswer Exchange(byte[] request, TimeSpan timeout, CancellationToken ct)
+    public HidPpAnswer Exchange(byte[] request, TimeSpan timeout, CancellationToken cancellationToken)
     {
         lock (_exchangeLock)
         {
@@ -77,7 +77,8 @@ internal sealed class HidPpChannel : IDisposable
                 var stream = StreamFor(request);
                 stream.WriteTimeout = StreamWriteTimeoutMs;
                 stream.Write(request);
-                return pending.Reply.Task.Wait(timeout, ct) ? ToAnswer(request, pending.Reply.Task.Result) : HidPpAnswer.Nothing;
+                var answered = pending.Reply.Task.Wait(timeout, cancellationToken);
+                return answered ? ToAnswer(request, pending.Reply.Task.Result) : HidPpAnswer.Nothing;
             }
             finally
             {
@@ -97,7 +98,7 @@ internal sealed class HidPpChannel : IDisposable
     }
 
     private HidStream StreamFor(byte[] request) =>
-        request[0] == HidPpMessage.ShortId
+        HidPpMessage.IsShort(request)
             ? _shortStream ?? throw new InvalidOperationException("The device has no short HID++ collection.")
             : _longStream;
 

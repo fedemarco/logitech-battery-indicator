@@ -10,17 +10,11 @@ namespace LogitechBattery;
 /// </summary>
 public sealed class HidPpBatteryProvider : IBatteryProvider
 {
-    private static readonly TimeSpan DiscoveryTimeout = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(1);
-
-    // shortcut: single supported model until device selection (multiple devices) is implemented
-    private const string SupportedDeviceName = "PRO X2 SUPERSTRIKE";
-
-    private sealed record Target(HidPpChannel Channel, byte DeviceIndex, byte FeatureIndex);
 
     private readonly object _readLock = new();
     private readonly List<HidPpChannel> _channels = [];
-    private volatile Target? _target;
+    private volatile BatteryTarget? _target;
     private ConnectionState? _lastState;
     private volatile bool _rediscover = true;
 
@@ -41,11 +35,11 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     private void OnReport(HidPpChannel channel, byte[] report)
     {
         var target = _target;
-        if (ReceiverNotifications.TryReadConnection(report, out var deviceIndex, out var linkEstablished))
+        if (ReceiverNotifications.ReadConnection(report) is { } connection)
         {
-            if (target is null || (target.Channel == channel && target.DeviceIndex == deviceIndex))
+            if (target is null || (target.Channel == channel && target.DeviceIndex == connection.DeviceIndex))
             {
-                AppLog.Write(linkEstablished ? "Mouse link up" : "Mouse link down");
+                AppLog.Write(connection.LinkEstablished ? "Mouse link up" : "Mouse link down");
                 ChangeDetected?.Invoke();
             }
         }
@@ -56,14 +50,14 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         }
     }
 
-    private BatteryStatus Read(CancellationToken ct)
+    private BatteryStatus Read(CancellationToken cancellationToken)
     {
         lock (_readLock)
         {
             try
             {
                 // A lost device is followed by one immediate rediscovery (e.g. cable unplugged while the receiver is still there).
-                return ReadCore(ct) ?? ReadCore(ct) ?? NoReading(ConnectionState.NotFound, DateTimeOffset.Now);
+                return ReadCore(cancellationToken) ?? ReadCore(cancellationToken) ?? NoReading(ConnectionState.NotFound, DateTimeOffset.Now);
             }
             catch (Exception ex)
             {
@@ -74,7 +68,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     }
 
     /// <summary>One read attempt; null if the device was lost during it.</summary>
-    private BatteryStatus? ReadCore(CancellationToken ct)
+    private BatteryStatus? ReadCore(CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.Now;
         if (_rediscover || _channels.Any(c => c.IsClosed))
@@ -83,7 +77,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
             _rediscover = false; // cleared first, so a USB event during the refresh is not lost
             try
             {
-                RefreshChannels(ct);
+                RefreshChannels(cancellationToken);
             }
             catch
             {
@@ -92,19 +86,19 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
             }
         }
 
-        _target ??= Discover(ct);
+        _target ??= DeviceDiscovery.Discover(_channels, cancellationToken);
         if (_target is not { } target)
             return NoReading(MissingTargetState(), now);
 
-        return ReadStatus(target, now, ct);
+        return ReadStatus(target, now, cancellationToken);
     }
 
-    private BatteryStatus? ReadStatus(Target target, DateTimeOffset now, CancellationToken ct)
+    private BatteryStatus? ReadStatus(BatteryTarget target, DateTimeOffset now, CancellationToken cancellationToken)
     {
         try
         {
             var request = HidPpMessage.BuildRequest(target.DeviceIndex, target.FeatureIndex, UnifiedBattery.GetStatusFunction, HidPpMessage.SoftwareId);
-            var answer = target.Channel.Exchange(request, ResponseTimeout, ct);
+            var answer = target.Channel.Exchange(request, ResponseTimeout, cancellationToken);
 
             if (answer.ErrorCode is { } errorCode)
             {
@@ -130,7 +124,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         }
     }
 
-    private void Lost(Target target)
+    private void Lost(BatteryTarget target)
     {
         AppLog.Write($"Device lost: {target.Channel.Key}");
         target.Channel.Dispose();
@@ -142,6 +136,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     private void ForgetTarget() => _target = null;
 
     // A receiver without an answering mouse means the mouse sleeps or is off.
+    // shortcut: any open HID++ device counts as that receiver, so another Logitech device alone reads as Asleep; revisit with multi-device support.
     private ConnectionState MissingTargetState() =>
         _channels.Any(c => !c.IsClosed) ? ConnectionState.Asleep : ConnectionState.NotFound;
 
@@ -159,7 +154,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         AppLog.Write($"Connection: {state}");
     }
 
-    private void RefreshChannels(CancellationToken ct)
+    private void RefreshChannels(CancellationToken cancellationToken)
     {
         foreach (var closed in _channels.Where(c => c.IsClosed).ToList())
         {
@@ -173,7 +168,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
                 continue;
             _channels.Add(channel);
             if (channel.HasShortCollection)
-                EnableReceiverNotifications(channel, ct);
+                EnableReceiverNotifications(channel, cancellationToken);
         }
     }
 
@@ -181,11 +176,11 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     /// Switches on the receiver's "wireless" notifications (mouse connected / disconnected). The receiver resets this
     /// flag on every replug, so it is checked on each open; we only write when the flag is off and change only that bit.
     /// </summary>
-    private static void EnableReceiverNotifications(HidPpChannel channel, CancellationToken ct)
+    private static void EnableReceiverNotifications(HidPpChannel channel, CancellationToken cancellationToken)
     {
         try
         {
-            var read = channel.Exchange(HidPpMessage.BuildGetRegister(HidPpMessage.ReceiverIndex, ReceiverNotifications.FlagsRegister), DiscoveryTimeout, ct);
+            var read = channel.Exchange(HidPpMessage.BuildGetRegister(HidPpMessage.ReceiverIndex, ReceiverNotifications.FlagsRegister), DeviceDiscovery.Timeout, cancellationToken);
             if (read.Response is not { } response)
                 return; // not a receiver (e.g. the cable answers with an error)
 
@@ -193,7 +188,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
                 return;
 
             var write = HidPpMessage.BuildSetRegister(HidPpMessage.ReceiverIndex, ReceiverNotifications.FlagsRegister, updatedFlags);
-            var written = channel.Exchange(write, DiscoveryTimeout, ct);
+            var written = channel.Exchange(write, DeviceDiscovery.Timeout, cancellationToken);
             AppLog.Write(written.Response is null ? "Receiver: enabling wireless notifications failed" : "Receiver: wireless notifications enabled");
         }
         catch (Exception ex) when (ex is IOException or TimeoutException)
@@ -201,81 +196,4 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
             AppLog.Write($"Receiver: enabling wireless notifications failed: {ex.Message}");
         }
     }
-
-    /// <summary>Pass 1: the cable's device index; pass 2: the receiver slots. First HID++ 2.0 device with Unified Battery wins.</summary>
-    private Target? Discover(CancellationToken ct)
-    {
-        foreach (var deviceIndexes in new[] { HidPpMessage.CableDeviceIndexes, HidPpMessage.ReceiverDeviceIndexes })
-        {
-            foreach (var channel in _channels.Where(c => !c.IsClosed))
-            {
-                if (FindTarget(channel, deviceIndexes, ct) is { } target)
-                    return target;
-            }
-        }
-        return null;
-    }
-
-    private static Target? FindTarget(HidPpChannel channel, byte[] deviceIndexes, CancellationToken ct)
-    {
-        foreach (var deviceIndex in deviceIndexes)
-        {
-            try
-            {
-                if (FindBatteryFeatureIndex(channel, deviceIndex, ct) is not { } featureIndex)
-                    continue;
-
-                var name = ReadName(channel, deviceIndex, ct);
-                if (name != SupportedDeviceName)
-                {
-                    AppLog.Write($"Skipping device: PID {channel.ProductId:X4}, devIdx {deviceIndex:X2}, name {(name is null ? "unreadable" : $"\"{name}\"")}");
-                    continue;
-                }
-                AppLog.Write($"Device found: PID {channel.ProductId:X4}, devIdx {deviceIndex:X2}, battery feature index {featureIndex:X2}");
-                return new Target(channel, deviceIndex, featureIndex);
-            }
-            catch (Exception ex) when (ex is IOException or TimeoutException)
-            {
-                break; // the channel itself failed (e.g. unplugged): the remaining indexes would fail the same way
-            }
-        }
-        return null;
-    }
-
-    private static byte? FindBatteryFeatureIndex(HidPpChannel channel, byte deviceIndex, CancellationToken ct)
-    {
-        if (RequestDuringDiscovery(channel, HidPpMessage.BuildPing(deviceIndex), ct) is null)
-            return null;
-        return FindFeatureIndex(channel, deviceIndex, UnifiedBattery.FeatureId, ct);
-    }
-
-    /// <summary>Asks the root feature for the index of <paramref name="featureId"/>; null if unsupported or unanswered.</summary>
-    private static byte? FindFeatureIndex(HidPpChannel channel, byte deviceIndex, ushort featureId, CancellationToken ct)
-    {
-        var response = RequestDuringDiscovery(channel, HidPpMessage.BuildGetFeature(deviceIndex, featureId), ct);
-        var featureIndex = response is null ? (byte)0 : HidPpMessage.ParamsOf(response)[0];
-        return featureIndex == 0 ? null : featureIndex;
-    }
-
-    /// <summary>Reads the DeviceName feature (0x0005); null if unsupported or unreadable.</summary>
-    private static string? ReadName(HidPpChannel channel, byte deviceIndex, CancellationToken ct)
-    {
-        if (FindFeatureIndex(channel, deviceIndex, DeviceName.FeatureId, ct) is not { } featureIndex)
-            return null;
-
-        var countResponse = RequestDuringDiscovery(channel, HidPpMessage.BuildRequest(deviceIndex, featureIndex, DeviceName.GetCountFunction, HidPpMessage.SoftwareId), ct);
-        if (countResponse is null || HidPpMessage.ParamsOf(countResponse)[0] == 0)
-            return null;
-
-        var length = DeviceName.LimitLength(HidPpMessage.ParamsOf(countResponse)[0]);
-        var chunks = DeviceName.ReadChunks(length, position =>
-        {
-            var request = HidPpMessage.BuildRequest(deviceIndex, featureIndex, DeviceName.GetNameFunction, HidPpMessage.SoftwareId, position);
-            return RequestDuringDiscovery(channel, request, ct) is { } chunk ? HidPpMessage.ParamsOf(chunk) : null;
-        });
-        return DeviceName.IsComplete(length, chunks) ? DeviceName.Assemble(length, chunks) : null;
-    }
-
-    private static byte[]? RequestDuringDiscovery(HidPpChannel channel, byte[] request, CancellationToken ct) =>
-        channel.Exchange(request, DiscoveryTimeout, ct).Response;
 }

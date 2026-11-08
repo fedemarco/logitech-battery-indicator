@@ -10,7 +10,7 @@ internal static class DeviceName
     public const int GetNameFunction = 1;
 
     private const int MaxLength = 64;
-    private const int ChunkLength = 16;
+    private const int ChunkLength = 16; // a long report has 20 bytes, 4 of them header
 
     /// <summary>Caps a reported name length at what we are willing to read.</summary>
     public static int LimitLength(int reportedLength) => Math.Min(reportedLength, MaxLength);

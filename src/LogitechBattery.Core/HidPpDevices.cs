@@ -4,7 +4,7 @@ using LogitechBattery.HidPp;
 namespace LogitechBattery;
 
 /// <summary>A HID collection with its first top-level usage (page&lt;&lt;16|usage, 0 if unknown) and max output report length.</summary>
-internal readonly record struct HidCollection(HidDevice Dev, uint Usage, int OutputReportLength);
+internal readonly record struct HidCollection(HidDevice Device, uint Usage, int OutputReportLength);
 
 /// <summary>A physical Logitech device exposing HID++: its vendor collections, the 20-byte long one and the 7-byte short one (if any).</summary>
 internal sealed record HidPpDevice(string Key, List<HidDevice> Collections, HidDevice LongCollection, HidDevice? ShortCollection);
@@ -34,20 +34,20 @@ internal static class HidPpDevices
     // Everything before "&col" identifies the physical device.
     public static string GroupKey(string path)
     {
-        var i = path.IndexOf("&col", StringComparison.OrdinalIgnoreCase);
-        return i > 0 ? path[..i] : path;
+        var collectionSuffixStart = path.IndexOf("&col", StringComparison.OrdinalIgnoreCase);
+        return collectionSuffixStart > 0 ? path[..collectionSuffixStart] : path;
     }
 
     /// <summary>Groups collections per physical device; long collection = 20-byte reports, short = 7-byte.</summary>
     public static IEnumerable<HidPpDevice> Group(IEnumerable<HidCollection> collections)
     {
-        foreach (var group in collections.GroupBy(c => GroupKey(c.Dev.DevicePath)))
+        foreach (var group in collections.GroupBy(collection => GroupKey(collection.Device.DevicePath)))
         {
-            var vendor = group.Where(c => UsagePage(c.Usage) >= VendorPageMinimum).ToList();
-            var longCollections = vendor.Where(c => c.OutputReportLength == HidPpMessage.LongLength).ToList();
-            var shortCollection = vendor.FirstOrDefault(c => c.OutputReportLength == HidPpMessage.ShortLength);
-            if (longCollections.Count > 0)
-                yield return new HidPpDevice(group.Key, vendor.Select(c => c.Dev).ToList(), longCollections[0].Dev, shortCollection.Dev);
+            var vendor = group.Where(collection => UsagePage(collection.Usage) >= VendorPageMinimum).ToList();
+            var longDevice = vendor.Where(collection => collection.OutputReportLength == HidPpMessage.LongLength).Select(collection => collection.Device).FirstOrDefault();
+            HidDevice? shortDevice = vendor.Where(collection => collection.OutputReportLength == HidPpMessage.ShortLength).Select(collection => collection.Device).FirstOrDefault();
+            if (longDevice is not null)
+                yield return new HidPpDevice(group.Key, vendor.Select(collection => collection.Device).ToList(), longDevice, shortDevice);
         }
     }
 
