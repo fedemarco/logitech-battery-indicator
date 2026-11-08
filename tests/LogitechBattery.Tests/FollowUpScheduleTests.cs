@@ -9,7 +9,7 @@ public class FollowUpScheduleTests
     private const int StepCount = 25;
 
     private static BatteryStatus Status(ConnectionState connection) =>
-        new(connection, connection == ConnectionState.Connected ? 80 : null, ChargingState.Unknown, DateTimeOffset.Now);
+        TestData.Status(connection == ConnectionState.Connected ? 80 : null, ChargingState.Unknown, connection);
 
     private static FollowUpSchedule StartedSchedule(out int generation)
     {

@@ -7,13 +7,10 @@ public sealed class ChargeHistoryTests
     private static readonly DateTimeOffset Now = new(2026, 11, 5, 12, 0, 0, TimeSpan.Zero); // Thursday
 
     private static HistoryRecord Record(DateTimeOffset time, ChargingState charging, int? percent = 50) =>
-        new(time, percent, charging, ConnectionState.Connected);
-
-    private static BatteryStatus Status(ChargingState charging) =>
-        new(ConnectionState.Connected, 50, charging, Now);
+        TestData.Record(time, percent, charging);
 
     private static string? Describe(DateTimeOffset? lastCharge, ChargingState current = ChargingState.Discharging) =>
-        ChargeHistory.Describe(lastCharge, Status(current), Now, TimeZoneInfo.Utc);
+        ChargeHistory.Describe(lastCharge, TestData.Status(charging: current, at: Now), Now, TimeZoneInfo.Utc);
 
     [Fact]
     public void Last_charge_is_null_for_an_empty_history()
@@ -103,7 +100,7 @@ public sealed class ChargeHistoryTests
         var plus5 = TimeZoneInfo.CreateCustomTimeZone("plus5", TimeSpan.FromHours(5), "plus5", "plus5");
         var charged = new DateTimeOffset(2026, 11, 5, 3, 0, 0, TimeSpan.Zero); // 08:00 local
 
-        Assert.Equal("Last charge: 08:00", ChargeHistory.Describe(charged, Status(ChargingState.Discharging), Now, plus5));
+        Assert.Equal("Last charge: 08:00", ChargeHistory.Describe(charged, TestData.Status(at: Now), Now, plus5));
     }
 
     [Fact]

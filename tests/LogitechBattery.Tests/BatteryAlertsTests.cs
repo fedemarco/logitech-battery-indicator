@@ -6,10 +6,10 @@ public class BatteryAlertsTests
 {
     private static readonly BatteryAlert? Quiet = null;
 
-    private static BatteryStatus Discharging(int percent) => TestStatus.Reading(ConnectionState.Connected, percent, ChargingState.Discharging);
-    private static BatteryStatus Charging(int percent) => TestStatus.Reading(ConnectionState.Connected, percent, ChargingState.Charging);
-    private static BatteryStatus Full() => TestStatus.Reading(ConnectionState.Connected, 100, ChargingState.Full);
-    private static BatteryStatus Asleep() => TestStatus.Reading(ConnectionState.Asleep, null, ChargingState.Unknown);
+    private static BatteryStatus Discharging(int percent) => TestData.Status(percent);
+    private static BatteryStatus Charging(int percent) => TestData.Status(percent, ChargingState.Charging);
+    private static BatteryStatus Full() => TestData.Status(100, ChargingState.Full);
+    private static BatteryStatus Asleep() => TestData.Status(null, ChargingState.Unknown, ConnectionState.Asleep);
 
     private static BatteryAlert?[] AlertsFor(BatteryAlerts alerts, params BatteryStatus[] readings) =>
         readings.Select(alerts.Update).ToArray();
@@ -54,7 +54,7 @@ public class BatteryAlertsTests
         Assert.Equal([BatteryAlert.Low, Quiet, Quiet, Quiet],
             AlertsFor(Discharging(10),
                 Asleep(),
-                TestStatus.Reading(ConnectionState.NotFound, 90, ChargingState.Charging),
+                TestData.Status(90, ChargingState.Charging, ConnectionState.NotFound),
                 Discharging(10)));
 
     // Guards the coupling "low level < new-cycle level" for configurable thresholds.
@@ -72,7 +72,7 @@ public class BatteryAlertsTests
 
     [Fact]
     public void Unknown_charging_state_is_quiet() =>
-        Assert.Equal([Quiet], AlertsFor(TestStatus.Reading(ConnectionState.Connected, 3, ChargingState.Unknown)));
+        Assert.Equal([Quiet], AlertsFor(TestData.Status(3, ChargingState.Unknown)));
 
     [Fact]
     public void Full_alerts_once_after_charging_from_below() =>

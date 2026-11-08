@@ -11,7 +11,7 @@ public sealed class RemainingTimeTests
         int? percent,
         ChargingState charging = ChargingState.Discharging,
         ConnectionState connection = ConnectionState.Connected) =>
-        new(Now - TimeSpan.FromDays(daysAgo), percent, charging, connection);
+        TestData.Record(Now - TimeSpan.FromDays(daysAgo), percent, charging, connection);
 
     private static double? Rate(params HistoryRecord[] records) => RemainingTime.DrainPercentPerDay(records, Now);
 
@@ -19,7 +19,7 @@ public sealed class RemainingTimeTests
         int? percent = 50,
         ChargingState charging = ChargingState.Discharging,
         ConnectionState connection = ConnectionState.Connected) =>
-        new(connection, percent, charging, Now);
+        TestData.Status(percent, charging, connection, Now);
 
     [Fact]
     public void Empty_history_gives_no_rate() => Assert.Null(Rate());

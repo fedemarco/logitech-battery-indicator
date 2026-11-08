@@ -20,7 +20,7 @@ public sealed class BatteryHistoryTests : IDisposable
         ChargingState charging = ChargingState.Discharging,
         ConnectionState connection = ConnectionState.Connected,
         TimeSpan? after = null) =>
-        new(connection, percent, charging, Start + (after ?? TimeSpan.Zero));
+        TestData.Status(percent, charging, connection, at: Start + (after ?? TimeSpan.Zero));
 
     private string[] Lines() => File.Exists(FilePath) ? File.ReadAllLines(FilePath) : [];
 

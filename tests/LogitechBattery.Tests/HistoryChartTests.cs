@@ -7,7 +7,7 @@ public sealed class HistoryChartTests
     private static readonly DateTimeOffset Now = new(2026, 11, 5, 12, 0, 0, TimeSpan.Zero);
 
     private static HistoryRecord Record(TimeSpan before, int? percent = 80, ChargingState charging = ChargingState.Discharging) =>
-        new(Now - before, percent, charging, ConnectionState.Connected);
+        TestData.Record(Now - before, percent, charging);
 
     private static HistoryChart Day(params HistoryRecord[] records) => HistoryChart.Build(records, Now, HistoryChart.Day);
 
