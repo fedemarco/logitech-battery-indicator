@@ -21,9 +21,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private const int MockPollIntervalMs = 1000;
     private const int PollIntervalMs = 60_000;
     private const int BalloonTimeoutMs = 10_000;
-    private const int MaxTooltipLength = 127; // NotifyIcon.MaxTextSize in dotnet/winforms (szTip holds 128 with the terminator)
-    private const int ShortShaLength = 7;
 
+    private readonly string _displayVersion = AppVersion.Display(AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()));
     private readonly IBatteryProvider _provider;
     private readonly BatteryAlerts _alerts = new();
     private readonly BatteryHistory? _history;
@@ -321,30 +320,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _drainPercentPerDay = RemainingTime.DrainPercentPerDay(_history.ReadSince(now - RemainingTime.Window), now);
     }
 
-    private static string BuildTooltip(string? statusLine, string? remainingText)
-    {
-        var version = DisplayVersion(AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()));
-        var lines = new[] { statusLine, remainingText, $"Logitech Battery {version}" }.OfType<string>();
-        var text = string.Join('\n', lines);
-        // Guard: a longer text makes NotifyIcon.Text throw.
-        return text.Length > MaxTooltipLength ? text[..MaxTooltipLength] : text;
-    }
-
-    // Releases show the semantic version only; dev builds (prerelease part) also keep a short commit so builds can be told apart.
-    private static string DisplayVersion(string? informationalVersion)
-    {
-        if (informationalVersion is null)
-            return "unknown";
-
-        var plus = informationalVersion.IndexOf('+');
-        if (plus < 0)
-            return informationalVersion;
-
-        var isDevBuild = informationalVersion[..plus].Contains('-');
-        return isDevBuild
-            ? informationalVersion[..Math.Min(informationalVersion.Length, plus + 1 + ShortShaLength)]
-            : informationalVersion[..plus];
-    }
+    private string BuildTooltip(string? statusLine, string? remainingText) =>
+        TrayTooltip.Build(statusLine, remainingText, _displayVersion);
 
     private void ExitApp()
     {
