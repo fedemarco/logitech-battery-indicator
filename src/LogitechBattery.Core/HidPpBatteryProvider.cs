@@ -17,6 +17,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     private volatile BatteryTarget? _target;
     private ConnectionState? _lastState;
     private volatile bool _rediscover = true;
+    private string? _lastOpenFailure;
 
     /// <summary>Raised (on a background thread) when the reading may have changed: USB devices added or removed, the mouse connecting to or disconnecting from the receiver, or a battery event.</summary>
     public event Action? ChangeDetected;
@@ -165,11 +166,27 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         foreach (var device in HidPpDevices.Find().Where(device => _channels.All(channel => channel.Key != device.Key)))
         {
             if (HidPpChannel.Open(device, OnReport) is not { } channel)
+            {
+                RetryOpenOnNextRead(device);
                 continue;
+            }
+            _lastOpenFailure = null;
             _channels.Add(channel);
             if (channel.HasShortCollection)
                 EnableReceiverNotifications(channel, cancellationToken);
         }
+    }
+
+    // A device that cannot be opened (during a resume or enumeration, or held exclusively by another program) is tried again
+    // at the next read, not only at the next USB change. Logged once per distinct failure, so a blocked device does not fill the log.
+    private void RetryOpenOnNextRead(HidPpDevice device)
+    {
+        _rediscover = true;
+        var failure = $"Cannot open {device.Key}";
+        if (failure == _lastOpenFailure)
+            return;
+        _lastOpenFailure = failure;
+        AppLog.Write(failure);
     }
 
     /// <summary>

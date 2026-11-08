@@ -22,12 +22,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private const int PollIntervalMs = 60_000;
     private const int BalloonTimeoutMs = 10_000;
     private const string AppName = "Logitech Battery";
+    private static readonly TimeSpan StuckReadAfter = TimeSpan.FromSeconds(60);
 
     private readonly string _displayVersion = AppVersion.Display(AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()));
     private readonly IBatteryProvider _provider;
     private readonly BatteryHistory? _history;
     private readonly BatteryAlerts _alerts = new();
     private readonly FollowUpSchedule _followUpSchedule = new();
+    private readonly StuckReadWatch _stuckReadWatch = new(StuckReadAfter);
 
     private readonly NotifyIcon _notifyIcon;
     private readonly System.Windows.Forms.Timer _timer;
@@ -212,9 +214,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private async Task<(bool Ran, BatteryStatus? Status)> RefreshAsync()
     {
         if (_refreshing || _exited)
+        {
+            if (_refreshing && _stuckReadWatch.ShouldReport(Environment.TickCount64))
+                AppLog.Write($"Battery read still running after {StuckReadAfter.TotalSeconds:0} s");
             return (false, null);
+        }
 
         _refreshing = true;
+        _stuckReadWatch.ReadStarted(Environment.TickCount64);
         string statusLine;
         BatteryStatus? status = null;
         try
@@ -236,6 +243,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         finally
         {
             _refreshing = false;
+            _stuckReadWatch.ReadFinished();
         }
 
         if (!_exited) // the tray icon is gone if the app exited during the read

@@ -53,8 +53,13 @@ internal sealed class HidPpChannel : IDisposable
         if (!device.LongCollection.TryOpen(out var longStream))
             return null;
         HidStream? shortStream = null;
-        if (device.ShortCollection is { } shortCollection && shortCollection.TryOpen(out var opened))
-            shortStream = opened;
+        if (device.ShortCollection is { } shortCollection)
+        {
+            if (shortCollection.TryOpen(out var opened))
+                shortStream = opened;
+            else
+                AppLog.Write($"Cannot open the short collection of {device.Key}"); // the channel works without it, minus HID++ 1.0 requests
+        }
 
         var channel = new HidPpChannel(device, longStream, shortStream, onReport);
         channel.StartReading(longStream);
