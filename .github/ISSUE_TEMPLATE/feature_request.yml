@@ -1,0 +1,24 @@
+name: Feature request
+description: An idea for the app
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: "The app stays small and private on purpose: no telemetry, no account, no background service."
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem do you want to solve?
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: The Logitech device this is about, if it is about a device.
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like the app to do?
+    validations:
+      required: true

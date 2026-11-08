@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/fedemarco/logitech-battery-indicator/security/advisories/new
+    about: Report a security problem in private. Please do not open a public issue.

@@ -76,6 +76,8 @@ If the tray shows "Mouse not found" while the mouse works, wake it (move it) and
 
 The reports and `log.txt` are written to `%LOCALAPPDATA%\LogitechBattery`. Please attach them when you [open an issue](https://github.com/fedemarco/logitech-battery-indicator/issues).
 
+These files can contain the times your PC was on and device ids. Versions before 0.5.2 can also contain your Windows user name in a file path. Check them before you attach them.
+
 Not tested yet: running at the same time as Logitech G HUB or Logi Options+.
 
 ## Roadmap
@@ -95,6 +97,10 @@ dotnet publish src/LogitechBattery.App -c Release -o out   # self-contained Logi
 ```
 
 Every push to `main` builds a development exe in GitHub Actions; a `vX.Y.Z` tag creates a release.
+
+## Contributing
+
+Bug reports and ideas are welcome as [issues](https://github.com/fedemarco/logitech-battery-indicator/issues). For code, open an issue first: the app stays small on purpose. A change must build with 0 warnings (`dotnet build`) and pass `dotnet test`. Security problems: see [SECURITY.md](SECURITY.md).
 
 ## Credits
 
