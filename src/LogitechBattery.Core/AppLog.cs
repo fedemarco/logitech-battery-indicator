@@ -41,7 +41,8 @@ public static class AppLog
     internal static string Redact(string text, string profileFolder)
     {
         var folder = profileFolder.TrimEnd('\\', '/');
-        if (folder.Length == 0)
+        var isBareDriveOrEmpty = folder.IndexOfAny(['\\', '/']) < 0; // "C:" would hit every drive letter in the text
+        if (isBareDriveOrEmpty)
             return text;
 
         // The lookahead keeps a longer folder name that starts the same (C:\Users\anna vs C:\Users\annabel) untouched.

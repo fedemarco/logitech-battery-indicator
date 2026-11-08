@@ -13,6 +13,7 @@ internal sealed class OverlayForm : Form
         public const int Width = 360;
         public const int Height = 260;
         public const int Margin = 12;
+        public const int ContentWidth = Width - 2 * Margin;
 
         public const int StatusTop = 10;
         public const int StatusHeight = 24;
@@ -180,6 +181,10 @@ internal sealed class OverlayForm : Form
         PanelLayout.Width - PanelLayout.PlotLeft - PanelLayout.PlotRightMargin,
         PanelLayout.Height - PanelLayout.PlotTop - PanelLayout.PlotBottomMargin);
 
+    /// <summary>A box of logical size whose corner lies at a pixel position moved by logical offsets.</summary>
+    private RectangleF BoxAt(PointF origin, float offsetX, float offsetY, float width, float height) =>
+        new(origin.X + offsetX * DpiScale, origin.Y + offsetY * DpiScale, width * DpiScale, height * DpiScale);
+
     private RectangleF Scaled(float x, float y, float width, float height) =>
         new(x * DpiScale, y * DpiScale, width * DpiScale, height * DpiScale);
 
@@ -200,7 +205,7 @@ internal sealed class OverlayForm : Form
 
     private void DrawHeader(Graphics graphics)
     {
-        var statusLine = Scaled(PanelLayout.Margin, PanelLayout.StatusTop, PanelLayout.Width - 2 * PanelLayout.Margin, PanelLayout.StatusHeight);
+        var statusLine = Scaled(PanelLayout.Margin, PanelLayout.StatusTop, PanelLayout.ContentWidth, PanelLayout.StatusHeight);
         using var statusFont = PixelFont(PanelLayout.StatusFontSize, FontStyle.Bold);
         using var detailFont = PixelFont(PanelLayout.DetailFontSize);
         DrawText(graphics, _statusLine, statusFont, PrimaryText, statusLine, StringAlignment.Near);
@@ -208,7 +213,7 @@ internal sealed class OverlayForm : Form
 
         if (_lastChargeText is null)
             return;
-        var lastChargeLine = Scaled(PanelLayout.Margin, PanelLayout.LastChargeTop, PanelLayout.Width - 2 * PanelLayout.Margin, PanelLayout.LastChargeHeight);
+        var lastChargeLine = Scaled(PanelLayout.Margin, PanelLayout.LastChargeTop, PanelLayout.ContentWidth, PanelLayout.LastChargeHeight);
         DrawText(graphics, _lastChargeText, detailFont, SecondaryText, lastChargeLine, StringAlignment.Near);
     }
 
@@ -219,9 +224,10 @@ internal sealed class OverlayForm : Form
         for (var index = 0; index < TimeRanges.Length; index++)
         {
             var isSelected = TimeRanges[index] == _selectedRange;
+            var textColor = isSelected ? PrimaryText : SecondaryText;
             if (isSelected)
                 graphics.FillRectangle(selectedBrush, ToggleRect(index));
-            DrawText(graphics, TimeRanges[index].Label, font, isSelected ? PrimaryText : SecondaryText, ToggleRect(index), StringAlignment.Center, StringAlignment.Center);
+            DrawText(graphics, TimeRanges[index].Label, font, textColor, ToggleRect(index), StringAlignment.Center, StringAlignment.Center);
         }
     }
 
@@ -291,8 +297,12 @@ internal sealed class OverlayForm : Form
             var y = PercentToY(percent, plot);
             graphics.DrawLine(gridPen, plot.Left, y, plot.Right, y);
 
-            var labelLeft = plot.Left - (PanelLayout.PercentLabelWidth + PanelLayout.PercentLabelGap) * DpiScale;
-            var label = new RectangleF(labelLeft, y - PanelLayout.PercentLabelHeight / 2f * DpiScale, PanelLayout.PercentLabelWidth * DpiScale, PanelLayout.PercentLabelHeight * DpiScale);
+            var label = BoxAt(
+                new PointF(plot.Left, y),
+                offsetX: -(PanelLayout.PercentLabelWidth + PanelLayout.PercentLabelGap),
+                offsetY: -PanelLayout.PercentLabelHeight / 2f,
+                PanelLayout.PercentLabelWidth,
+                PanelLayout.PercentLabelHeight);
             DrawText(graphics, percent.ToString(), font, SecondaryText, label, StringAlignment.Far, StringAlignment.Center);
         }
     }
@@ -307,7 +317,12 @@ internal sealed class OverlayForm : Form
             var x = TimeToX(tick.Time, plot, now);
             graphics.DrawLine(gridPen, x, plot.Bottom, x, plot.Bottom + PanelLayout.TickLength * DpiScale);
 
-            var label = new RectangleF(x - PanelLayout.TickLabelWidth / 2f * DpiScale, plot.Bottom + PanelLayout.TickLabelTop * DpiScale, PanelLayout.TickLabelWidth * DpiScale, PanelLayout.TickLabelHeight * DpiScale);
+            var label = BoxAt(
+                new PointF(x, plot.Bottom),
+                offsetX: -PanelLayout.TickLabelWidth / 2f,
+                offsetY: PanelLayout.TickLabelTop,
+                PanelLayout.TickLabelWidth,
+                PanelLayout.TickLabelHeight);
             DrawText(graphics, tick.Label, font, SecondaryText, label, StringAlignment.Center);
         }
     }

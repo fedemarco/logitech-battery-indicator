@@ -27,7 +27,6 @@ jobs:
       - run: dotnet publish src/LogitechBattery.App -c Release -o out
       # The published exe, started with simulated readings, must keep running and log nothing but the start line and notifications.
       - name: Smoke test (the mock app must start and keep running)
-        continue-on-error: true # phase 1: reports only; make it blocking after 3 green runs in a row
         shell: pwsh
         run: |
           $log = Join-Path $env:LOCALAPPDATA 'LogitechBattery\log.txt'

@@ -122,17 +122,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private static ToolStripMenuItem BuildStartupItem()
     {
         var startItem = new ToolStripMenuItem("Start with Windows");
-        startItem.Click += (_, _) =>
-        {
-            if (AutoStart.IsEnabled())
-            {
-                if (!AutoStart.Disable())
-                    ShowWarning("Couldn't turn off Start with Windows. The reason is in log.txt.");
-            }
-            else if (!AutoStart.Enable()) // also rewrites a stale path and clears a Task Manager "disabled"
-                ShowWarning("Couldn't turn on Start with Windows. The reason is in log.txt.");
-        };
+        startItem.Click += (_, _) => ToggleStartWithWindows();
         return startItem;
+    }
+
+    private static void ToggleStartWithWindows()
+    {
+        if (AutoStart.IsEnabled())
+        {
+            if (!AutoStart.Disable())
+                ShowWarning("Couldn't turn off Start with Windows. The reason is in log.txt.");
+            return;
+        }
+
+        if (!AutoStart.Enable()) // also rewrites a stale path and clears a Task Manager "disabled"
+            ShowWarning("Couldn't turn on Start with Windows. The reason is in log.txt.");
     }
 
     private ToolStripMenuItem BuildClearHistoryItem(BatteryHistory history)
