@@ -8,6 +8,7 @@ namespace LogitechBattery;
 /// <summary>Draws a <see cref="TrayIndicator"/> from the embedded razer-taskbar gauge icons (32x32 PNG), colors as-is.</summary>
 internal static class TrayIconRenderer
 {
+    // Only the UI thread renders icons (TrayApplicationContext.UpdateTray), so the cache needs no lock.
     private static readonly Dictionary<string, Bitmap> Cache = [];
 
     [DllImport("user32.dll")]

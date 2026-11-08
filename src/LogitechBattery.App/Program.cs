@@ -6,22 +6,15 @@ namespace LogitechBattery;
 
 internal static class Program
 {
+    private const string ProbeFlag = "--probe";
+    private const string ListenFlag = "--listen";
+    private const string MockFlag = "--mock";
+
     [STAThread]
     private static void Main(string[] args)
     {
-        if (args.Contains("--probe"))
-        {
-            OpenInNotepad(HidPpProbe.Run());
+        if (RunDiagnostic(args))
             return;
-        }
-        if (args.Contains("--listen"))
-        {
-            ApplicationConfiguration.Initialize();
-            OpenInNotepad(HidPpListener.Run(() => MessageBox.Show(
-                "Listening to the mouse and receiver.\n\nUnplug and replug, let the mouse sleep and wake it, then click OK to stop.",
-                "Logitech Battery — listening")));
-            return;
-        }
 
         using var mutex = new Mutex(true, @"Local\LogitechBattery-SingleInstance", out var isFirstInstance);
         if (!isFirstInstance)
@@ -30,7 +23,7 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, e) => AppLog.Write($"Unhandled UI exception: {e.Exception}"); // keep the tray app running
-        var useMock = args.Contains("--mock");
+        var useMock = args.Contains(MockFlag);
         var version = AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()) ?? "unknown";
         var mode = useMock ? "mock" : "HID++";
         AppLog.Write($"Started LogitechBattery {version} ({mode})");
@@ -51,6 +44,25 @@ internal static class Program
             AppLog.Write($"Startup failed: {ex}");
             throw;
         }
+    }
+
+    /// <summary>Runs <c>--probe</c> or <c>--listen</c> when asked and opens the report; returns false for a normal start.</summary>
+    private static bool RunDiagnostic(string[] args)
+    {
+        if (args.Contains(ProbeFlag))
+        {
+            OpenInNotepad(HidPpProbe.Run());
+            return true;
+        }
+        if (args.Contains(ListenFlag))
+        {
+            ApplicationConfiguration.Initialize();
+            OpenInNotepad(HidPpListener.Run(() => MessageBox.Show(
+                "Listening to the mouse and receiver.\n\nUnplug and replug, let the mouse sleep and wake it, then click OK to stop.",
+                "Logitech Battery — listening")));
+            return true;
+        }
+        return false;
     }
 
     private static BatteryHistory OpenHistory()

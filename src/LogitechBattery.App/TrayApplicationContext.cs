@@ -21,24 +21,27 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private const int MockPollIntervalMs = 1000;
     private const int PollIntervalMs = 60_000;
     private const int BalloonTimeoutMs = 10_000;
+    private const string AppName = "Logitech Battery";
 
     private readonly string _displayVersion = AppVersion.Display(AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()));
     private readonly IBatteryProvider _provider;
-    private readonly BatteryAlerts _alerts = new();
     private readonly BatteryHistory? _history;
+    private readonly BatteryAlerts _alerts = new();
+    private readonly FollowUpSchedule _followUpSchedule = new();
+
     private readonly NotifyIcon _notifyIcon;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly System.Windows.Forms.Timer _followUp = new();
-    private readonly FollowUpSchedule _followUpSchedule = new();
-    private volatile SynchronizationContext? _ui;
     private readonly int _iconSize = SystemInformation.SmallIconSize.Width;
+    private volatile SynchronizationContext? _ui;
+
     private Icon? _icon;
     private TrayIndicator? _indicator;
-    private double? _drainPercentPerDay;
     private OverlayForm? _overlay;
     private long? _overlayClosedAtMs;
     private BatteryStatus? _status;
     private string _statusLine = "";
+    private double? _drainPercentPerDay;
     private bool _refreshing;
     private bool _exited;
 
@@ -49,43 +52,47 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (SynchronizationContext.Current is WindowsFormsSynchronizationContext ui)
             _ui = ui; // otherwise captured on the first idle
 
-        var menu = new ContextMenuStrip();
-        int pollIntervalMs;
-        if (provider is MockBatteryProvider mock)
-        {
-            menu.Items.Add(BuildSimulatorMenu(mock));
-            menu.Items.Add(new ToolStripSeparator());
-            pollIntervalMs = MockPollIntervalMs;
-        }
-        else
-        {
+        var isSimulator = provider is MockBatteryProvider;
+        if (!isSimulator)
             AutoStart.EnableOnFirstRun();
-            var startItem = BuildStartupItem();
-            menu.Opening += (_, _) => startItem.Checked = AutoStart.IsEnabled();
-            menu.Items.Add(startItem);
-            if (history is not null)
-                menu.Items.Add(BuildClearHistoryItem(history));
-            pollIntervalMs = PollIntervalMs;
-        }
-        menu.Items.Add("Exit", null, (_, _) => ExitApp());
 
         _notifyIcon = new NotifyIcon
         {
             Icon = SystemIcons.Application, // replaced by the first refresh
             Text = BuildTooltip(null, null),
-            ContextMenuStrip = menu,
+            ContextMenuStrip = BuildMenu(),
             Visible = true,
         };
 
         _notifyIcon.MouseClick += OnTrayClick;
 
         RecomputeDrainRate();
-        _timer = StartPollTimer(pollIntervalMs);
+        _timer = StartPollTimer(isSimulator ? MockPollIntervalMs : PollIntervalMs);
         _followUp.Tick += OnFollowUpTickAsync;
         if (provider is HidPpBatteryProvider hid)
             hid.ChangeDetected += OnChangeDetected;
 
         Application.Idle += OnFirstIdle;
+    }
+
+    private ContextMenuStrip BuildMenu()
+    {
+        var menu = new ContextMenuStrip();
+        if (_provider is MockBatteryProvider mock)
+        {
+            menu.Items.Add(BuildSimulatorMenu(mock));
+            menu.Items.Add(new ToolStripSeparator());
+        }
+        else
+        {
+            var startItem = BuildStartupItem();
+            menu.Opening += (_, _) => startItem.Checked = AutoStart.IsEnabled();
+            menu.Items.Add(startItem);
+            if (_history is not null)
+                menu.Items.Add(BuildClearHistoryItem(_history));
+        }
+        menu.Items.Add("Exit", null, (_, _) => ExitApp());
+        return menu;
     }
 
     private ToolStripMenuItem BuildSimulatorMenu(MockBatteryProvider mock)
@@ -112,13 +119,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         startItem.Click += (_, _) =>
         {
             if (AutoStart.IsEnabled())
-                AutoStart.Disable();
+            {
+                if (!AutoStart.Disable())
+                    ShowWarning("Couldn't turn off Start with Windows. The reason is in log.txt.");
+            }
             else if (!AutoStart.Enable()) // also rewrites a stale path and clears a Task Manager "disabled"
-                MessageBox.Show(
-                    "Couldn't turn on Start with Windows. The reason is in log.txt.",
-                    "Logitech Battery",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                ShowWarning("Couldn't turn on Start with Windows. The reason is in log.txt.");
         };
         return startItem;
     }
@@ -130,7 +136,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             var answer = MessageBox.Show(
                 "Delete all battery history? This cannot be undone.",
-                "Logitech Battery",
+                AppName,
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning,
                 MessageBoxDefaultButton.Button2);
@@ -144,14 +150,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 RefreshTooltip();
             }
             else
-                MessageBox.Show(
-                    "Couldn't delete the battery history. Close any program that has history.csv open and try again.",
-                    "Logitech Battery",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                ShowWarning("Couldn't delete the battery history. Close any program that has history.csv open and try again.");
         };
         return clearItem;
     }
+
+    private static void ShowWarning(string message) =>
+        MessageBox.Show(message, AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
     private System.Windows.Forms.Timer StartPollTimer(int intervalMs)
     {

@@ -18,19 +18,27 @@ internal static class AutoStart
     {
         try
         {
-            using var runKey = Registry.CurrentUser.OpenSubKey(RunKey);
-            if (runKey?.GetValue(ValueName) is not string value
-                || Command is not { } command
-                || !string.Equals(value, command, StringComparison.OrdinalIgnoreCase))
-                return false;
-            using var approvedKey = Registry.CurrentUser.OpenSubKey(StartupApprovedKey);
-            return StartupApproval.IsApproved(approvedKey?.GetValue(ValueName));
+            return IsRunEntryForThisExe() && IsApprovedInTaskManager();
         }
         catch (Exception ex)
         {
             AppLog.Write($"Reading start with Windows failed: {ex.Message}");
             return false;
         }
+    }
+
+    private static bool IsRunEntryForThisExe()
+    {
+        using var runKey = Registry.CurrentUser.OpenSubKey(RunKey);
+        return runKey?.GetValue(ValueName) is string value
+            && Command is { } command
+            && string.Equals(value, command, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsApprovedInTaskManager()
+    {
+        using var approvedKey = Registry.CurrentUser.OpenSubKey(StartupApprovedKey);
+        return StartupApproval.IsApproved(approvedKey?.GetValue(ValueName));
     }
 
     /// <summary>Writes the Run entry and clears a Task Manager "disabled" flag. Returns false on failure.</summary>
@@ -56,16 +64,19 @@ internal static class AutoStart
         }
     }
 
-    public static void Disable()
+    /// <summary>Removes the Run entry. Returns false on failure.</summary>
+    public static bool Disable()
     {
         try
         {
             using var runKey = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
             runKey?.DeleteValue(ValueName, throwOnMissingValue: false);
+            return true;
         }
         catch (Exception ex)
         {
             AppLog.Write($"Disabling start with Windows failed: {ex.Message}");
+            return false;
         }
     }
 
