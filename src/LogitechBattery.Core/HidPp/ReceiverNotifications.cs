@@ -15,7 +15,6 @@ internal static class ReceiverNotifications
 
     // Device connection notification: [0x10, devIdx, 0x41, protocol, flags, wpid lo, wpid hi].
     private const byte ConnectionSubId = 0x41;
-    private const int SubIdOffset = 2;
     private const int ConnectionFlagsOffset = 4;
     private const byte LinkNotEstablishedBit = 0x40;
 
@@ -39,7 +38,7 @@ internal static class ReceiverNotifications
     {
         var isConnection = report.Length >= HidPpMessage.ShortLength
             && report[HidPpMessage.ReportIdOffset] == HidPpMessage.ShortId
-            && report[SubIdOffset] == ConnectionSubId;
+            && report[HidPpMessage.FeatureOrSubIdOffset] == ConnectionSubId;
         if (!isConnection)
             return null;
 

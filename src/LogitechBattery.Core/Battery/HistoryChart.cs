@@ -16,7 +16,8 @@ public sealed record HistoryChart(IReadOnlyList<ChartPoint> Points, IReadOnlyLis
     public static readonly TimeSpan Week = TimeSpan.FromDays(7);
 
     // The history writes at least one record per heartbeat, so a longer silence means the app was not watching.
-    private static readonly TimeSpan MaxSolidGap = BatteryHistory.HeartbeatInterval + TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan HeartbeatSlack = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan MaxSolidGap = BatteryHistory.HeartbeatInterval + HeartbeatSlack;
     private static readonly TimeSpan HourTickStep = TimeSpan.FromHours(6);
 
     /// <summary>Points inside [now - window, now] in time order; records after now (clock skew) are dropped.</summary>

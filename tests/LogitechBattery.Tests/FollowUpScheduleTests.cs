@@ -57,8 +57,9 @@ public class FollowUpScheduleTests
     }
 
     [Fact]
-    public void A_mouse_that_never_connects_is_read_after_1_s_then_5_s_for_a_minute_then_10_s_15_s_and_30_s_for_a_minute_each()
+    public void A_mouse_that_never_connects_is_followed_up_on_the_whole_schedule()
     {
+        // 1 s, then one minute each of 5 s, 10 s, 15 s and 30 s delays
         int[] OneMinuteOf(int delayMs) => Enumerable.Repeat(delayMs, 60_000 / delayMs).ToArray();
         int[] expectedDelaysMs = [FirstDelayMs, .. OneMinuteOf(5000), .. OneMinuteOf(10_000), .. OneMinuteOf(15_000), .. OneMinuteOf(30_000)];
 

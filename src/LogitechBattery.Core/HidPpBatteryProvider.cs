@@ -71,7 +71,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     private BatteryStatus? ReadCore(CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.Now;
-        if (_rediscover || _channels.Any(c => c.IsClosed))
+        if (_rediscover || _channels.Any(channel => channel.IsClosed))
         {
             ForgetTarget();
             _rediscover = false; // cleared first, so a USB event during the refresh is not lost
@@ -138,7 +138,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     // A receiver without an answering mouse means the mouse sleeps or is off.
     // shortcut: any open HID++ device counts as that receiver, so another Logitech device alone reads as Asleep; revisit with multi-device support.
     private ConnectionState MissingTargetState() =>
-        _channels.Any(c => !c.IsClosed) ? ConnectionState.Asleep : ConnectionState.NotFound;
+        _channels.Any(channel => !channel.IsClosed) ? ConnectionState.Asleep : ConnectionState.NotFound;
 
     private BatteryStatus NoReading(ConnectionState state, DateTimeOffset now)
     {
@@ -156,13 +156,13 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
 
     private void RefreshChannels(CancellationToken cancellationToken)
     {
-        foreach (var closed in _channels.Where(c => c.IsClosed).ToList())
+        foreach (var closed in _channels.Where(channel => channel.IsClosed).ToList())
         {
             closed.Dispose();
             _channels.Remove(closed);
         }
 
-        foreach (var device in HidPpDevices.Find().Where(d => _channels.All(c => c.Key != d.Key)))
+        foreach (var device in HidPpDevices.Find().Where(device => _channels.All(channel => channel.Key != device.Key)))
         {
             if (HidPpChannel.Open(device, OnReport) is not { } channel)
                 continue;

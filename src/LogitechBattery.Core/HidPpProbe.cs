@@ -8,6 +8,7 @@ namespace LogitechBattery;
 /// <summary>
 /// One-off diagnostic (<c>--probe</c>): lists Logitech HID collections and sends read-only HID++ 2.0 queries,
 /// logging every report as hex. Writes %LOCALAPPDATA%\LogitechBattery\probe.txt.
+/// The channel gives each request its own software id, so the low nibble of byte 3 differs from the request as built.
 /// </summary>
 public sealed class HidPpProbe
 {
@@ -28,11 +29,21 @@ public sealed class HidPpProbe
 
         Directory.CreateDirectory(AppPaths.DataDirectory);
         var file = Path.Combine(AppPaths.DataDirectory, ReportFileName);
-        File.WriteAllText(file, probe._log.ToString());
+        File.WriteAllText(file, probe.LogText());
         return file;
     }
 
-    private void Log(string line) => _log.AppendLine(line);
+    private void Log(string line)
+    {
+        lock (_log) // reports arrive on the channel's reader threads
+            _log.AppendLine(line);
+    }
+
+    private string LogText()
+    {
+        lock (_log)
+            return _log.ToString();
+    }
 
     private void Execute()
     {
@@ -78,7 +89,7 @@ public sealed class HidPpProbe
 
     private void ProbeDevice(HidPpDevice device)
     {
-        if (HidPpChannel.Open(device, onReport: (_, _) => { }) is not { } channel)
+        if (HidPpChannel.Open(device, LogReport) is not { } channel)
         {
             Log($"cannot open {device.LongCollection.DevicePath}");
             return;
@@ -95,6 +106,8 @@ public sealed class HidPpProbe
             }
         }
     }
+
+    private void LogReport(HidPpChannel channel, byte[] report) => Log($"  ← {HidPpMessage.ToHex(report)}");
 
     private void ProbeIndex(DeviceLink link)
     {
@@ -151,25 +164,21 @@ public sealed class HidPpProbe
             Log($"  UnifiedBattery capabilities params: {HidPpMessage.ToHex(HidPpMessage.ParamsOf(capabilities)[..6])}");
         if (Call(link, featureIndex, UnifiedBattery.GetStatusFunction) is { } status)
         {
-            var p = HidPpMessage.ParamsOf(status);
-            Log($"  UnifiedBattery status: {p[0]}% levelFlags {p[1]:X2} charging {p[2]} externalPower {p[3]}");
+            var statusParams = HidPpMessage.ParamsOf(status);
+            Log($"  UnifiedBattery status: {statusParams[0]}% levelFlags {statusParams[1]:X2} charging {statusParams[2]} externalPower {statusParams[3]}");
         }
     }
 
     private byte[]? Call(DeviceLink link, byte featureIndex, int function, params byte[] parameters) =>
         Request(link, HidPpMessage.BuildRequest(link.DeviceIndex, featureIndex, function, HidPpMessage.SoftwareId, parameters));
 
-    /// <summary>Sends a read-only request; returns the response report or null (error or timeout, logged).</summary>
+    /// <summary>Sends a read-only request; returns the response report or null (error or timeout). Every report, answers included, is logged by <see cref="LogReport"/>.</summary>
     private byte[]? Request(DeviceLink link, byte[] request)
     {
         Log($"  → {HidPpMessage.ToHex(request)}");
         var answer = link.Channel.Exchange(request, ResponseTimeout, CancellationToken.None);
-        if (answer.Response is { } response)
-        {
-            Log($"  ← {HidPpMessage.ToHex(response)}");
-            return response;
-        }
-        Log(answer.ErrorCode is { } errorCode ? $"  ← HID++ 2.0 error 0x{errorCode:X2}" : "  ← no answer (timeout or HID++ 1.0 error)");
-        return null;
+        if (answer.Response is null)
+            Log(answer.ErrorCode is { } errorCode ? $"  HID++ 2.0 error 0x{errorCode:X2}" : "  no answer (timeout or HID++ 1.0 error)");
+        return answer.Response;
     }
 }

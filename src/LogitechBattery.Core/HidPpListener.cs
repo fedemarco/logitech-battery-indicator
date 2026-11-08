@@ -6,7 +6,7 @@ using LogitechBattery.HidPp;
 namespace LogitechBattery;
 
 /// <summary>
-/// Diagnostic (<c>--listen</c>): keeps every Logitech HID++ collection open and logs each incoming report with a
+/// Diagnostic (<c>--listen</c>): keeps every Logitech HID++ device open (its long and short collection) and logs each incoming report with a
 /// timestamp until stopped, reopening collections after USB changes. The only request sent is a read of the
 /// notification flags register. Writes %LOCALAPPDATA%\LogitechBattery\listen.txt.
 /// </summary>
@@ -116,7 +116,7 @@ public sealed class HidPpListener
         {
             channel.Exchange(request, DeviceDiscovery.Timeout, CancellationToken.None);
         }
-        catch (Exception ex) when (ex is IOException or TimeoutException)
+        catch (Exception ex) when (ex is IOException or TimeoutException or ObjectDisposedException)
         {
             Log($"{channel.ProductId:X4}  write failed: {ex.Message}");
         }

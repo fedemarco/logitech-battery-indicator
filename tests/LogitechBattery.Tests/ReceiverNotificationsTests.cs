@@ -30,6 +30,12 @@ public class ReceiverNotificationsTests
     public void A_HID_pp_1_0_error_is_not_a_connection_notification() =>
         Assert.Null(ReceiverNotifications.ReadConnection([0x10, 0x01, 0x8F, 0x06, 0x1A, 0x08, 0x00]));
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(6)]
+    public void A_report_shorter_than_a_short_report_is_not_a_connection_notification(int length) =>
+        Assert.Null(ReceiverNotifications.ReadConnection(ConnectionNotification(deviceIndex: 1, flags: 0x22)[..length]));
+
     [Fact]
     public void Enabling_wireless_sets_only_that_bit()
     {

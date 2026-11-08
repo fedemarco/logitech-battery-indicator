@@ -140,9 +140,10 @@ internal sealed class HidPpChannel : IDisposable
 
     private void Deliver(byte[] report)
     {
-        if (_pending is { } pending && HidPpMessage.Classify(pending.Request, report).Kind != HidPpReplyKind.None)
-            pending.Reply.TrySetResult(report);
+        // The handler runs first, so a log written there precedes whatever the waiting request logs next.
         try { _onReport(this, report); }
         catch (Exception ex) { AppLog.Write($"HID++ report handler failed: {ex}"); } // a faulty handler must not stop the reader
+        if (_pending is { } pending && HidPpMessage.Classify(pending.Request, report).Kind != HidPpReplyKind.None)
+            pending.Reply.TrySetResult(report);
     }
 }

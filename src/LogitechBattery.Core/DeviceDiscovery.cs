@@ -8,7 +8,7 @@ internal sealed record BatteryTarget(HidPpChannel Channel, byte DeviceIndex, byt
 /// <summary>Finds the mouse among the open HID++ channels: first the cable's device index, then the receiver slots.</summary>
 internal static class DeviceDiscovery
 {
-    /// <summary>How long a discovery request may wait for its answer (a sleeping device does not answer).</summary>
+    /// <summary>How long a quick one-shot request (discovery, receiver flags) may wait for its answer; a sleeping device does not answer.</summary>
     public static readonly TimeSpan Timeout = TimeSpan.FromMilliseconds(500);
 
     // shortcut: single supported model until device selection (multiple devices) is implemented

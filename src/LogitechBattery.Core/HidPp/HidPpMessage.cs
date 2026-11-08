@@ -25,7 +25,7 @@ internal static class HidPpMessage
     public const int HeaderLength = 4;
     public const int ParamsOffset = HeaderLength;
 
-    /// <summary>Software id (low nibble of the function byte) for requests sent outside a channel, as <c>HidPpProbe</c> does. <c>HidPpChannel</c> replaces it with a rotating id, so for channel callers it is a placeholder.</summary>
+    /// <summary>Software id (low nibble of the function byte) given to a request when it is built. <c>HidPpChannel</c> replaces it with a rotating id before sending, so it is a placeholder.</summary>
     public const byte SoftwareId = 0x0A;
 
     /// <summary>Device index used on the USB cable.</summary>
@@ -50,7 +50,7 @@ internal static class HidPpMessage
     // byte 3 is function and software id (2.0) or the register address (1.0). The names cover both.
     public const int ReportIdOffset = 0;
     public const int DeviceIndexOffset = 1;
-    private const int FeatureOrSubIdOffset = 2;
+    public const int FeatureOrSubIdOffset = 2;
     private const int FunctionOrAddressOffset = 3;
     private const int FunctionShift = 4; // the function is the high nibble of byte 3, the software id the low one
 
@@ -104,16 +104,8 @@ internal static class HidPpMessage
         BuildShortRequest(deviceIndex, GetRegisterSubId, register, []);
 
     /// <summary>HID++ 1.0 short "set register" request: writes up to three value bytes.</summary>
-    public static byte[] BuildSetRegister(byte deviceIndex, byte register, ReadOnlySpan<byte> value)
-    {
-        var report = new byte[ShortLength];
-        report[0] = ShortId;
-        report[DeviceIndexOffset] = deviceIndex;
-        report[FeatureOrSubIdOffset] = SetRegisterSubId;
-        report[FunctionOrAddressOffset] = register;
-        value.CopyTo(report.AsSpan(ParamsOffset));
-        return report;
-    }
+    public static byte[] BuildSetRegister(byte deviceIndex, byte register, ReadOnlySpan<byte> value) =>
+        BuildShortRequest(deviceIndex, SetRegisterSubId, register, value);
 
     /// <summary>True for a short (HID++ 1.0) report or request.</summary>
     public static bool IsShort(byte[] report) => report[ReportIdOffset] == ShortId;

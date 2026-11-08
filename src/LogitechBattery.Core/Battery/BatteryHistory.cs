@@ -36,17 +36,17 @@ public sealed class BatteryHistory(string path)
     /// Drops records older than <paramref name="age"/> before the newest record that is not after <paramref name="now"/>,
     /// so a record dated in the future (wrong clock) cannot wipe the history.
     /// </summary>
-    public void PruneOlderThan(TimeSpan age, DateTimeOffset now) => Guard(nameof(PruneOlderThan), fallback: false, () =>
+    public void PruneOlderThan(TimeSpan age, DateTimeOffset now) => Guard(nameof(PruneOlderThan), () =>
     {
         var all = ReadAll();
         var pastRecords = all.Where(record => record.Time <= now).ToList();
         if (pastRecords.Count == 0)
-            return false;
+            return;
 
         var cutoff = pastRecords.Max(record => record.Time) - age;
         var kept = all.Where(record => record.Time >= cutoff).ToList();
         if (kept.Count == all.Count)
-            return false;
+            return;
 
         var tempPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!, Path.GetRandomFileName());
         try
@@ -58,7 +58,6 @@ public sealed class BatteryHistory(string path)
         {
             File.Delete(tempPath); // no-op after a successful move
         }
-        return true;
     });
 
     /// <summary>Returns true when the file is gone afterwards (deleted, or there was none).</summary>
@@ -143,6 +142,13 @@ public sealed class BatteryHistory(string path)
         value = Enum.Parse<T>(text);
         return true;
     }
+
+    private static void Guard(string operation, Action action) =>
+        Guard(operation, fallback: false, () =>
+        {
+            action();
+            return false;
+        });
 
     /// <summary>Runs one history operation; any failure is logged and gives <paramref name="fallback"/>.</summary>
     private static T Guard<T>(string operation, T fallback, Func<T> action)
