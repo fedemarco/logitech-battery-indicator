@@ -8,14 +8,6 @@ public sealed record BatteryStatus(
 {
     public const int FullPercent = 100;
 
-    public BatteryLevel? Level => Percent switch
-    {
-        null => null,
-        <= BatteryThresholds.Critical => BatteryLevel.Critical,
-        <= BatteryThresholds.Low => BatteryLevel.Low,
-        _ => BatteryLevel.Good,
-    };
-
     /// <summary>Short text such as "85% · Discharging", "Charging · 60%", "Mouse asleep".</summary>
     public string ToDisplayString()
     {

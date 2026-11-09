@@ -289,7 +289,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             if (indicator != _indicator || iconSize != _iconSize)
                 ReplaceIcon(indicator, iconSize);
 
-            if (status is not null && _alerts.Update(status) is { } alert)
+            if (status is not null && _alerts.Update(status, AlertSettings.Default) is { } alert)
                 ShowAlert(alert, status.Percent);
         }
         catch (Exception ex)

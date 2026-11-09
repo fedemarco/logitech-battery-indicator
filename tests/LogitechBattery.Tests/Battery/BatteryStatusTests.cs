@@ -5,20 +5,6 @@ namespace LogitechBattery.Tests;
 public class BatteryStatusTests
 {
     [Theory]
-    [InlineData(4, BatteryLevel.Critical)]
-    [InlineData(5, BatteryLevel.Critical)]
-    [InlineData(6, BatteryLevel.Low)]
-    [InlineData(15, BatteryLevel.Low)]
-    [InlineData(16, BatteryLevel.Good)]
-    [InlineData(100, BatteryLevel.Good)]
-    public void Level_changes_at_the_critical_and_low_thresholds(int percent, BatteryLevel expected) =>
-        Assert.Equal(expected, TestData.Status(percent).Level);
-
-    [Fact]
-    public void Level_is_unknown_without_percent() =>
-        Assert.Null(TestData.Status(null, ChargingState.Unknown).Level);
-
-    [Theory]
     [InlineData(ConnectionState.Asleep, null, ChargingState.Unknown, "Mouse asleep")]
     [InlineData(ConnectionState.Asleep, 50, ChargingState.Charging, "Mouse asleep")]
     [InlineData(ConnectionState.NotFound, null, ChargingState.Unknown, "Mouse not found")]
