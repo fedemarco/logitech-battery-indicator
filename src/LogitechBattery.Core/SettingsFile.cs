@@ -16,11 +16,11 @@ public sealed class SettingsFile(string path)
     private const int MaxQuotedCharacters = 40;
 
     private const string NewerVersionReason =
-        "settings.ini is from a newer version of Logitech Battery, so this version does not change it. The new setting applies until you exit.";
+        "settings.ini has a version that this version of Logitech Battery does not know (a newer one?), so it does not change the file. The new setting applies until you exit.";
     private const string UnreadableReason =
         "settings.ini could not be read when the app started, so the app does not overwrite it. The new setting applies until you exit. Details are in log.txt.";
     private const string SaveFailedReason =
-        "Couldn't save the settings. Close any program that has settings.ini open and try again.";
+        "Couldn't save the settings. Close any program that has settings.ini open and try again. The new setting applies until you exit.";
 
     private static readonly string[] KnownKeys = [VersionKey, LowPercentKey, FullChargeAlertKey];
 
@@ -37,10 +37,17 @@ public sealed class SettingsFile(string path)
                 return KeepFileAndUseDefaults("settings.ini is larger than 64 KB; using the defaults");
 
             var parsed = Parse(File.ReadAllLines(path));
-            foreach (var problem in parsed.Problems)
-                AppLog.Write($"Settings: {problem}");
             if (parsed.IsNewerVersion)
+            {
+                // A newer version may add keys or allow other values, so its problems would only fill the log at every start.
+                AppLog.Write("Settings: settings.ini has an unknown version; reading only the values this version knows");
                 _doNotOverwriteReason = NewerVersionReason;
+            }
+            else
+            {
+                foreach (var problem in parsed.Problems)
+                    AppLog.Write($"Settings: {problem}");
+            }
             return parsed.Settings;
         }
         catch (Exception ex)

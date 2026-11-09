@@ -61,7 +61,7 @@ public class BatteryAlertsTests
     }
 
     [Fact]
-    public void Lowering_the_low_level_after_an_alert_warns_again_at_the_new_level()
+    public void Lowering_the_low_level_after_an_alert_warns_again_once_the_battery_rose_above_the_new_cycle_level()
     {
         var alerts = new BatteryAlerts();
 
@@ -69,6 +69,15 @@ public class BatteryAlertsTests
         Assert.Null(alerts.Update(Discharging(21), LowAt(10)));
         Assert.Null(alerts.Update(Discharging(11), LowAt(10)));
         Assert.Equal(BatteryAlert.Low, alerts.Update(Discharging(10), LowAt(10)));
+    }
+
+    [Fact]
+    public void Lowering_the_low_level_after_an_alert_stays_quiet_in_the_same_discharge_cycle()
+    {
+        var alerts = new BatteryAlerts();
+
+        Assert.Equal(BatteryAlert.Low, alerts.Update(Discharging(20), LowAt(20)));
+        Assert.Null(alerts.Update(Discharging(10), LowAt(10)));
     }
 
     [Fact]
@@ -132,7 +141,8 @@ public class BatteryAlertsTests
     [MemberData(nameof(LowChoices))]
     public void Discharging_from_100_to_10_above_the_low_level_never_alerts(int lowPercent)
     {
-        var readings = Enumerable.Range(lowPercent + 10, 101 - (lowPercent + 10)).Reverse().Select(Discharging).ToArray();
+        var newCyclePercent = lowPercent + 10;
+        var readings = Enumerable.Range(newCyclePercent, 101 - newCyclePercent).Reverse().Select(Discharging).ToArray();
 
         Assert.All(AlertsFor(LowAt(lowPercent), readings), alert => Assert.Null(alert));
     }

@@ -11,7 +11,7 @@ public sealed class SettingsFileTests : IDisposable
 
     public void Dispose() => _folder.Dispose();
 
-    private SettingsFile Settings() => new(FilePath);
+    private SettingsFile CreateSettingsFile() => new(FilePath);
 
     private void WriteFile(params string[] lines)
     {
@@ -23,12 +23,12 @@ public sealed class SettingsFileTests : IDisposable
 
     [Fact]
     public void Missing_file_gives_the_defaults() =>
-        Assert.Equal(AlertSettings.Default, Settings().Load());
+        Assert.Equal(AlertSettings.Default, CreateSettingsFile().Load());
 
     [Fact]
     public void Save_creates_a_missing_folder()
     {
-        Assert.Null(Settings().Save(NonDefault));
+        Assert.Null(CreateSettingsFile().Save(NonDefault));
 
         Assert.True(File.Exists(FilePath));
     }
@@ -36,15 +36,15 @@ public sealed class SettingsFileTests : IDisposable
     [Fact]
     public void Saved_settings_load_back_unchanged()
     {
-        Settings().Save(NonDefault);
+        CreateSettingsFile().Save(NonDefault);
 
-        Assert.Equal(NonDefault, Settings().Load());
+        Assert.Equal(NonDefault, CreateSettingsFile().Load());
     }
 
     [Fact]
     public void Saved_file_has_the_exact_format()
     {
-        Settings().Save(NonDefault);
+        CreateSettingsFile().Save(NonDefault);
 
         Assert.Equal(
             [
@@ -60,7 +60,7 @@ public sealed class SettingsFileTests : IDisposable
     [Fact]
     public void Save_leaves_no_temp_file()
     {
-        Settings().Save(NonDefault);
+        CreateSettingsFile().Save(NonDefault);
 
         Assert.Equal([FilePath], Directory.GetFiles(_folder.Path));
     }
@@ -69,7 +69,7 @@ public sealed class SettingsFileTests : IDisposable
     public void Empty_file_gives_the_defaults_and_can_be_saved()
     {
         WriteFile();
-        var settings = Settings();
+        var settings = CreateSettingsFile();
 
         Assert.Equal(AlertSettings.Default, settings.Load());
         Assert.Null(settings.Save(NonDefault));
@@ -134,7 +134,7 @@ public sealed class SettingsFileTests : IDisposable
     public void Unknown_key_is_dropped_at_the_next_save()
     {
         WriteFile("lowAlertPercnt=20");
-        var settings = Settings();
+        var settings = CreateSettingsFile();
         settings.Load();
 
         settings.Save(NonDefault);
@@ -175,7 +175,7 @@ public sealed class SettingsFileTests : IDisposable
         Directory.CreateDirectory(_folder.Path);
         File.WriteAllText(FilePath, "lowAlertPercent=20" + Environment.NewLine, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
-        Assert.Equal(20, Settings().Load().LowPercent);
+        Assert.Equal(20, CreateSettingsFile().Load().LowPercent);
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public sealed class SettingsFileTests : IDisposable
     {
         WriteFile("version=2", "lowAlertPercent=20", "somethingNew=1");
         var before = File.ReadAllBytes(FilePath);
-        var settings = Settings();
+        var settings = CreateSettingsFile();
 
         Assert.Equal(20, settings.Load().LowPercent);
         Assert.NotNull(settings.Save(AlertSettings.Default));
@@ -196,7 +196,7 @@ public sealed class SettingsFileTests : IDisposable
         Directory.CreateDirectory(_folder.Path);
         File.WriteAllText(FilePath, new string('#', (int)SettingsFile.MaxBytes + 1));
         var before = File.ReadAllBytes(FilePath);
-        var settings = Settings();
+        var settings = CreateSettingsFile();
 
         Assert.Equal(AlertSettings.Default, settings.Load());
         Assert.NotNull(settings.Save(NonDefault));
@@ -208,7 +208,7 @@ public sealed class SettingsFileTests : IDisposable
     {
         WriteFile("lowAlertPercent=20");
         var before = File.ReadAllBytes(FilePath);
-        var settings = Settings();
+        var settings = CreateSettingsFile();
 
         using (new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.None))
             Assert.Equal(AlertSettings.Default, settings.Load());
@@ -222,7 +222,7 @@ public sealed class SettingsFileTests : IDisposable
     {
         WriteFile("lowAlertPercent=20");
         File.WriteAllText(FilePath + ".tmp", "garbage");
-        var settings = Settings();
+        var settings = CreateSettingsFile();
 
         Assert.Equal(20, settings.Load().LowPercent);
         settings.Save(AlertSettings.Default);
@@ -245,7 +245,7 @@ public sealed class SettingsFileTests : IDisposable
     {
         WriteFile("lowAlertPercent=20");
         var before = File.ReadAllBytes(FilePath);
-        var settings = Settings();
+        var settings = CreateSettingsFile();
         settings.Load();
 
         using (new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
