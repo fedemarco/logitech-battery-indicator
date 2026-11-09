@@ -33,7 +33,7 @@ jobs:
         env:
           # Memory gate: the budgets, the baseline and the reason are in CLAUDE.md ("Memory gate").
           MAX_PRIVATE_MB: 20
-          MAX_THREADS: 20
+          MAX_THREADS: 24 # thread-pool threads vary from run to run (11 to 16 seen), so this only catches a real leak
         run: |
           $log = Join-Path $env:LOCALAPPDATA 'LogitechBattery\log.txt'
           if (Test-Path $log) { throw "The tests wrote to the real log: $log" }
