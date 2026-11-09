@@ -60,6 +60,7 @@ No telemetry. The app sends no data to any server and never connects to the inte
 - `%LOCALAPPDATA%\LogitechBattery\history.csv` – the battery history behind the graph and the time-left estimate (kept for one year; **Clear history…** deletes it).
 - `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` – the "Start with Windows" entry, only while that option is on.
 - `HKCU\Software\LogitechBattery` – remembers that the first-run "Start with Windows" default was applied.
+- `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run` – the app only removes its own "disabled" mark here when you turn "Start with Windows" on again after turning it off in Task Manager.
 
 ## Uninstall
 
