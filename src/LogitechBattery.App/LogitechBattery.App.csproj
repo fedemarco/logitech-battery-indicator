@@ -12,7 +12,15 @@
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!--
+      Uncompressed: a compressed exe is unpacked into private memory at start (52 MB in Task Manager); an uncompressed one is mapped
+      from the file (12 MB). Measured on Windows 2026-11-08, together with the two settings below. The exe is about 107 MB instead of 52 MB.
+    -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <!-- The UI is English only; this drops the 13 WinForms language folders (MessageBox buttons stay localized by Windows). -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- All formatting in the code uses InvariantCulture, so the app does not need the ICU culture data. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>

@@ -25,7 +25,7 @@ The tray icon shows the charge at a glance; hover it for the exact percentage. T
 - Windows, 64-bit.
 - A Logitech PRO X2 SUPERSTRIKE mouse, connected through its Lightspeed receiver or the USB cable. Other Logitech devices are not supported yet.
 
-No .NET installation is needed: the app is a single self-contained `.exe`.
+No .NET installation is needed: the app is a single self-contained `.exe` (about 107 MB, because it contains the .NET runtime uncompressed; this keeps the app at about 12 MB of RAM instead of about 50 MB).
 
 ## Install
 
