@@ -12,7 +12,7 @@ The tray icon shows the charge at a glance; hover it for the exact percentage. T
 
 - **Battery in the tray** – the icon shows the level and whether the mouse is charging; the tooltip shows the exact percentage.
 - **Instant updates** – the tray changes within about a second when the mouse sleeps, wakes, is switched off or on, or when the receiver or cable is plugged in or out.
-- **Notifications** – a Windows notification when the battery is low (15 %), critical (5 %) and fully charged.
+- **Notifications** – a Windows notification when the battery is low (15 % by default, 10 % or 20 % in the tray menu), critical (5 %) and fully charged (can be switched off in the tray menu).
 - **Start with Windows** – on by default, can be switched off in the tray menu. No admin rights needed.
 - **History panel** – left-click the tray icon for a 24 h / 7 day graph of the battery level and the time of the last charge.
 - **Time left** – an estimate of the hours left, based on how fast the battery drained over the last week.
@@ -45,7 +45,7 @@ What's new: see the [releases](https://github.com/fedemarco/logitech-battery-ind
 |---|---|
 | Hover the tray icon | Status, exact percentage, time left and app version |
 | Left-click the tray icon | Opens the history panel; Esc or a click elsewhere closes it |
-| Right-click the tray icon | Menu: Start with Windows, Clear history…, Exit |
+| Right-click the tray icon | Menu: Notifications (low battery level, fully charged), Start with Windows, Clear history…, Exit |
 
 Icon colors: green from 40 %, yellow from 20 %, red below 20 %. A separate "unknown" icon means the mouse is asleep, switched off or not found.
 
@@ -58,6 +58,7 @@ No telemetry. The app sends no data to any server and never connects to the inte
 - `%LOCALAPPDATA%\LogitechBattery\log.txt` and `log.old.txt` – a small diagnostic log (rotated, at most about 512 KB). Paths under your user folder are shown as `%USERPROFILE%`.
 - `%LOCALAPPDATA%\LogitechBattery\probe.txt` and `listen.txt` – the reports of `--probe` and `--listen`, only when you run those options.
 - `%LOCALAPPDATA%\LogitechBattery\history.csv` – the battery history behind the graph and the time-left estimate (kept for one year; **Clear history…** deletes it).
+- `%LOCALAPPDATA%\LogitechBattery\settings.ini` – your notification settings, written only when you change one. The app reads it at startup, so exit the app before you edit it by hand.
 - `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` – the "Start with Windows" entry, only while that option is on.
 - `HKCU\Software\LogitechBattery` – remembers that the first-run "Start with Windows" default was applied.
 - `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run` – the app only removes its own "disabled" mark here when you turn "Start with Windows" on again after turning it off in Task Manager.
@@ -87,7 +88,6 @@ Not tested yet: running at the same time as Logitech G HUB or Logi Options+.
 ## Roadmap
 
 - More Logitech devices, with a choice of which one the tray shows.
-- Settings, such as the notification levels.
 - Automatic updates.
 
 ## Building from source

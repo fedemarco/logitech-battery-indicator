@@ -35,9 +35,10 @@ internal static class Program
     {
         try
         {
+            var settingsFile = new SettingsFile(Path.Combine(AppPaths.DataDirectory, "settings.ini"));
             return useMock
-                ? new TrayApplicationContext(new MockBatteryProvider(), history: null) // simulated readings must never reach the real file
-                : new TrayApplicationContext(new HidPpBatteryProvider(), OpenHistory());
+                ? new TrayApplicationContext(new MockBatteryProvider(), history: null, settingsFile) // simulated readings must never reach the real history file
+                : new TrayApplicationContext(new HidPpBatteryProvider(), OpenHistory(), settingsFile);
         }
         catch (Exception ex)
         {

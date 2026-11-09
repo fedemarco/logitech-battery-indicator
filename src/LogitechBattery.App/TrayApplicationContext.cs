@@ -28,6 +28,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly string _displayVersion = AppVersion.Display(AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()));
     private readonly IBatteryProvider _provider;
     private readonly BatteryHistory? _history;
+    private readonly SettingsFile _settingsFile;
+    private AlertSettings _settings;
     private readonly BatteryAlerts _alerts = new();
     private readonly FollowUpSchedule _followUpSchedule = new();
     private readonly StuckReadWatch _stuckReadWatch = new(StuckReadAfter);
@@ -48,10 +50,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private bool _refreshing;
     private bool _exited;
 
-    public TrayApplicationContext(IBatteryProvider provider, BatteryHistory? history)
+    public TrayApplicationContext(IBatteryProvider provider, BatteryHistory? history, SettingsFile settingsFile)
     {
         _provider = provider;
         _history = history;
+        _settingsFile = settingsFile;
+        _settings = settingsFile.Load();
         if (SynchronizationContext.Current is WindowsFormsSynchronizationContext ui)
             _ui = ui; // otherwise captured on the first idle
 
@@ -87,10 +91,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (_provider is MockBatteryProvider mock)
         {
             menu.Items.Add(BuildSimulatorMenu(mock));
+            menu.Items.Add(NotificationsMenu.Build(() => _settings, ApplySettings));
             menu.Items.Add(new ToolStripSeparator());
         }
         else
         {
+            menu.Items.Add(NotificationsMenu.Build(() => _settings, ApplySettings));
+            menu.Items.Add(new ToolStripSeparator());
             var startItem = BuildStartupItem();
             menu.Opening += (_, _) => startItem.Checked = AutoStart.IsEnabled();
             menu.Items.Add(startItem);
@@ -163,6 +170,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 ShowWarning("Couldn't delete the battery history. Close any program that has history.csv open and try again.");
         };
         return clearItem;
+    }
+
+    private void ApplySettings(AlertSettings updated)
+    {
+        _settings = updated; // applies for this session even when the save fails
+        if (_settingsFile.Save(updated) is { } problem)
+            ShowWarning(problem);
+        _ = RefreshAsync(); // a new level is checked against the current battery at once
     }
 
     private static void ShowWarning(string message) =>
@@ -289,7 +304,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             if (indicator != _indicator || iconSize != _iconSize)
                 ReplaceIcon(indicator, iconSize);
 
-            if (status is not null && _alerts.Update(status, AlertSettings.Default) is { } alert)
+            if (status is not null && _alerts.Update(status, _settings) is { } alert)
                 ShowAlert(alert, status.Percent);
         }
         catch (Exception ex)
