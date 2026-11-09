@@ -152,6 +152,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         foreach (var channel in _channels)
             channel.Dispose();
         _channels.Clear();
+        _devicesFailedToOpen.Clear(); // after a resume, a device that still cannot be opened is logged again
         ForgetTarget();
     }
 
@@ -184,7 +185,10 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
             _channels.Remove(closed);
         }
 
-        foreach (var device in HidPpDevices.Find().Where(device => _channels.All(channel => channel.Key != device.Key)))
+        var devices = HidPpDevices.Find();
+        _devicesFailedToOpen.IntersectWith(devices.Select(device => device.Key)); // an unplugged device is logged again if it fails after a replug
+
+        foreach (var device in devices.Where(device => _channels.All(channel => channel.Key != device.Key)))
         {
             if (HidPpChannel.Open(device, OnReport) is not { } channel)
             {
