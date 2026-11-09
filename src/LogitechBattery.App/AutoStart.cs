@@ -53,14 +53,27 @@ internal static class AutoStart
             }
             using var runKey = Registry.CurrentUser.CreateSubKey(RunKey);
             runKey.SetValue(ValueName, command);
-            using var approvedKey = Registry.CurrentUser.OpenSubKey(StartupApprovedKey, writable: true);
-            approvedKey?.DeleteValue(ValueName, throwOnMissingValue: false);
+            ClearTaskManagerDisabledFlag();
             return true;
         }
         catch (Exception ex)
         {
             AppLog.Write($"Enabling start with Windows failed: {ex.Message}");
             return false;
+        }
+    }
+
+    // The Run entry is what starts the app, so a failure here is logged, not reported as a failed Enable.
+    private static void ClearTaskManagerDisabledFlag()
+    {
+        try
+        {
+            using var approvedKey = Registry.CurrentUser.OpenSubKey(StartupApprovedKey, writable: true);
+            approvedKey?.DeleteValue(ValueName, throwOnMissingValue: false);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write($"Clearing the Task Manager startup flag failed: {ex.Message}");
         }
     }
 
