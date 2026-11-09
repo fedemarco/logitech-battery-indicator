@@ -41,7 +41,7 @@ internal static class AutoStart
         return StartupApproval.IsApproved(approvedKey?.GetValue(ValueName));
     }
 
-    /// <summary>Writes the Run entry and clears a Task Manager "disabled" flag. Returns false on failure.</summary>
+    /// <summary>Writes the Run entry and clears a Task Manager "disabled" flag. Returns false when start with Windows is still off.</summary>
     public static bool Enable()
     {
         try
@@ -54,7 +54,7 @@ internal static class AutoStart
             using var runKey = Registry.CurrentUser.CreateSubKey(RunKey);
             runKey.SetValue(ValueName, command);
             ClearTaskManagerDisabledFlag();
-            return true;
+            return IsEnabled();
         }
         catch (Exception ex)
         {
@@ -63,7 +63,7 @@ internal static class AutoStart
         }
     }
 
-    // The Run entry is what starts the app, so a failure here is logged, not reported as a failed Enable.
+    // A failure is only logged: when no "disabled" flag exists, start-up works anyway. Enable() checks the real result.
     private static void ClearTaskManagerDisabledFlag()
     {
         try
