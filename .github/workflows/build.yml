@@ -31,7 +31,9 @@ jobs:
       - name: Smoke test (the mock app must start, keep running and stay inside the memory limit)
         shell: pwsh
         env:
-          MAX_PRIVATE_MB: 40 # memory gate: the compressed exe needed 55 MB, the uncompressed one 16 MB (see CLAUDE.md, Memory gate)
+          # Memory gate, see CLAUDE.md. First run on windows-latest, mock app after 30 s: 11 MB private, 11 threads. The compressed exe needed about 55 MB.
+          MAX_PRIVATE_MB: 20
+          MAX_THREADS: 20
         run: |
           $log = Join-Path $env:LOCALAPPDATA 'LogitechBattery\log.txt'
           if (Test-Path $log) { throw "The tests wrote to the real log: $log" }
@@ -44,7 +46,8 @@ jobs:
               $app.Refresh()
               $privateMb = [math]::Round($app.PrivateMemorySize64 / 1MB, 1)
               $workingSetMb = [math]::Round($app.WorkingSet64 / 1MB, 1)
-              Write-Host "Memory after 30 s: private $privateMb MB (limit $env:MAX_PRIVATE_MB), working set $workingSetMb MB, threads $($app.Threads.Count), handles $($app.HandleCount)"
+              Write-Host "Memory after 30 s: private $privateMb MB (limit $env:MAX_PRIVATE_MB), working set $workingSetMb MB, threads $($app.Threads.Count) (limit $env:MAX_THREADS), handles $($app.HandleCount)"
+              $threads = $app.Threads.Count
               Stop-Process -Id $app.Id -Force
           }
           $lines = @(Get-Content $log -ErrorAction SilentlyContinue)
@@ -53,6 +56,7 @@ jobs:
               Where-Object Message -match 'LogitechBattery')
           if (-not $running) { throw "The app exited (exit code $($app.ExitCode))" }
           if ($privateMb -gt [double]$env:MAX_PRIVATE_MB) { throw "Memory gate: private bytes $privateMb MB are above the limit of $env:MAX_PRIVATE_MB MB" }
+          if ($threads -gt [int]$env:MAX_THREADS) { throw "Memory gate: $threads threads are above the limit of $env:MAX_THREADS" }
           if ($crashes) { throw "Windows logged an error: $($crashes[0].Message)" }
           if ($lines.Count -eq 0 -or $lines[0] -notmatch '  Started LogitechBattery \S+ \(mock\)$') { throw 'No start line in the log' }
           $unexpected = @($lines | Select-Object -Skip 1 | Where-Object { $_ -notmatch '  Notification: ' })
