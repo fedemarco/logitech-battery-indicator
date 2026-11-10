@@ -73,6 +73,7 @@ internal sealed class OverlayForm : Form
     private string _statusLine = "";
     private string _estimateText = "";
     private string? _lastChargeText;
+    private bool _systemDrawsBorder;
     private TimeRangeOption _selectedRange = TimeRanges[0]; // every open starts with the 24 h view
     private HistoryChart _chart = HistoryChart.Build([], DateTimeOffset.UtcNow, HistoryChart.Day);
 
@@ -124,6 +125,12 @@ internal sealed class OverlayForm : Form
     }
 
     private static Screen TargetScreen() => Screen.FromPoint(Cursor.Position);
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        _systemDrawsBorder = WindowCorners.TryUseRoundedCorners(Handle, BorderColor);
+    }
 
     protected override void OnLoad(EventArgs e)
     {
@@ -195,8 +202,11 @@ internal sealed class OverlayForm : Form
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-        using var border = new Pen(BorderColor);
-        graphics.DrawRectangle(border, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
+        if (!_systemDrawsBorder)
+        {
+            using var border = new Pen(BorderColor);
+            graphics.DrawRectangle(border, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
+        }
 
         DrawHeader(graphics);
         DrawToggle(graphics);
