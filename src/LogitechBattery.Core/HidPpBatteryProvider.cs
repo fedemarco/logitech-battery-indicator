@@ -12,19 +12,21 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
 {
     private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(1);
 
-    // Shown while no device was found yet this session; step 4 of multi-device support replaces it.
-    private static readonly DeviceInfo UnknownDevice = new(DeviceId.FromRoute(0, 0), "PRO X2 SUPERSTRIKE");
+    // Shown only while no device was found yet this session, so the app shows what it showed before multi-device support.
+    private static readonly DeviceInfo PlaceholderDevice = new(DeviceId.FromRoute(0, 0), "PRO X2 SUPERSTRIKE");
+
+    /// <summary>The outcome of one read attempt; <see cref="ChannelLost"/> asks for one immediate second attempt.</summary>
+    private sealed record ReadPass(IReadOnlyList<DeviceReading> Readings, bool ChannelLost);
 
     private readonly object _readLock = new();
     private readonly List<HidPpChannel> _channels = [];
-    private volatile BatteryTarget? _target;
-    private DeviceInfo? _lastDevice;
-    private ConnectionState? _lastState;
+    private readonly DeviceRoutes _routes = new();
+    private readonly Dictionary<DeviceId, ConnectionState> _lastStates = [];
     private volatile bool _rediscover = true;
     private volatile bool _reopen;
     private readonly HashSet<string> _devicesFailedToOpen = [];
 
-    /// <summary>Raised (on a background thread) when the reading may have changed: USB devices added or removed, the mouse connecting to or disconnecting from the receiver, or a battery event.</summary>
+    /// <summary>Raised (on a background thread) when the reading may have changed: USB devices added or removed, a device connecting to or disconnecting from the receiver, or a battery event.</summary>
     public event Action? ChangeDetected;
 
     public HidPpBatteryProvider() => DeviceList.Local.Changed += OnUsbDevicesChanged;
@@ -46,16 +48,12 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
 
     private void OnReport(HidPpChannel channel, byte[] report)
     {
-        var target = _target;
         if (ReceiverNotifications.ReadConnection(report) is { } connection)
         {
-            if (target is null || (target.Channel == channel && target.DeviceIndex == connection.DeviceIndex))
-            {
-                AppLog.Write(connection.LinkEstablished ? "Mouse link up" : "Mouse link down");
-                ChangeDetected?.Invoke();
-            }
+            AppLog.Write(connection.LinkEstablished ? "Device link up" : "Device link down");
+            ChangeDetected?.Invoke();
         }
-        else if (target is not null && target.Channel == channel && HidPpMessage.IsEventFrom(report, target.DeviceIndex, target.FeatureIndex))
+        else if (_routes.IsBatteryEventSource(channel, report))
         {
             AppLog.Write("Battery event");
             ChangeDetected?.Invoke();
@@ -68,9 +66,11 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         {
             try
             {
-                // A lost device is followed by one immediate rediscovery (e.g. cable unplugged while the receiver is still there).
-                var status = ReadCore(cancellationToken) ?? ReadCore(cancellationToken) ?? NoReading(ConnectionState.NotFound, DateTimeOffset.Now);
-                return [new DeviceReading(_lastDevice ?? UnknownDevice, status)];
+                // A lost channel is followed by one immediate rediscovery (e.g. cable unplugged while the receiver is still there).
+                var pass = ReadCore(cancellationToken);
+                if (pass.ChannelLost)
+                    pass = ReadCore(cancellationToken);
+                return pass.Readings;
             }
             catch (Exception ex)
             {
@@ -80,8 +80,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         }
     }
 
-    /// <summary>One read attempt; null if the device was lost during it.</summary>
-    private BatteryStatus? ReadCore(CancellationToken cancellationToken)
+    private ReadPass ReadCore(CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.Now;
         if (_reopen)
@@ -92,7 +91,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         }
         if (_rediscover || _channels.Any(channel => channel.IsClosed))
         {
-            ForgetTarget();
+            _routes.Clear();
             _rediscover = false; // cleared first, so a USB event during the refresh is not lost
             try
             {
@@ -105,51 +104,88 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
             }
         }
 
-        _target ??= DeviceDiscovery.Discover(_channels, cancellationToken);
-        if (_target is not { } target)
-            return NoReading(MissingTargetState(), now);
+        _routes.DropRoutesOnClosedChannels();
+        var channelLost = LoseChannels(_routes.Discover(_channels, cancellationToken));
 
-        _lastDevice = target.Device;
-        return ReadStatus(target, now, cancellationToken);
+        var statuses = new Dictionary<DeviceId, BatteryStatus?>();
+        foreach (var route in _routes.All)
+            channelLost |= ReadStatus(route, now, statuses, cancellationToken);
+        return new ReadPass(ToReadings(statuses, now), channelLost);
     }
 
-    private BatteryStatus? ReadStatus(BatteryTarget target, DateTimeOffset now, CancellationToken cancellationToken)
+    /// <summary>Reads one routed device into <paramref name="statuses"/>; true if its channel was lost.</summary>
+    private bool ReadStatus(BatteryTarget route, DateTimeOffset now, Dictionary<DeviceId, BatteryStatus?> statuses, CancellationToken cancellationToken)
     {
         try
         {
-            var request = HidPpMessage.BuildRequest(target.DeviceIndex, target.FeatureIndex, UnifiedBattery.GetStatusFunction, HidPpMessage.SoftwareId);
-            var answer = target.Channel.Exchange(request, ResponseTimeout, cancellationToken);
+            var request = HidPpMessage.BuildRequest(route.DeviceIndex, route.FeatureIndex, UnifiedBattery.GetStatusFunction, HidPpMessage.SoftwareId);
+            var answer = route.Channel.Exchange(request, ResponseTimeout, cancellationToken);
 
             if (answer.ErrorCode is { } errorCode)
             {
-                // The device answered with an error: not asleep.
-                AppLog.Write($"getStatus failed with HID++ 2.0 error 0x{errorCode:X2}");
-                ForgetTarget(); // indexes may be stale (e.g. re-paired): rediscover next time
-                throw new InvalidOperationException($"Battery status request failed (HID++ error 0x{errorCode:X2}).");
+                // The device answered with an error: not asleep. Indexes may be stale (e.g. re-paired): rediscover next time.
+                AppLog.Write($"getStatus failed with HID++ 2.0 error 0x{errorCode:X2} ({route.Device.Name})");
+                statuses[route.Device.Id] = null;
+                _routes.Drop(route);
             }
-            if (answer.Response is not { } response)
+            else if (answer.Response is not { } response)
             {
-                ForgetTarget(); // rediscover next time (the mouse may be paired to another slot); the channel stays open to hear it wake up
-                return NoReading(ConnectionState.Asleep, now);
+                // Rediscover next time (the device may be paired to another slot); the channel stays open to hear it wake up.
+                _routes.Drop(route);
             }
-
-            var status = UnifiedBattery.ParseStatus(HidPpMessage.ParamsOf(response), now);
-            LogState(ConnectionState.Connected);
-            return status;
+            else
+            {
+                statuses[route.Device.Id] = UnifiedBattery.ParseStatus(HidPpMessage.ParamsOf(response), now);
+            }
+            return false;
+        }
+        catch (FormatException ex)
+        {
+            AppLog.Write($"getStatus answer of {route.Device.Name} is malformed: {ex.Message}");
+            statuses[route.Device.Id] = null;
+            _routes.Drop(route);
+            return false;
         }
         catch (Exception ex) when (ex is IOException or TimeoutException)
         {
-            Lost(target); // unplugged mid-read
-            return null;
+            Lost(route.Channel); // unplugged mid-read
+            return true;
         }
     }
 
-    private void Lost(BatteryTarget target)
+    /// <summary>One reading per known device, in first-seen order; a device that did not answer is Asleep or NotFound.</summary>
+    private IReadOnlyList<DeviceReading> ToReadings(Dictionary<DeviceId, BatteryStatus?> statuses, DateTimeOffset now)
     {
-        AppLog.Write($"Device lost: {target.Channel.Key}");
-        target.Channel.Dispose();
-        _channels.Remove(target.Channel);
-        ForgetTarget();
+        if (_routes.Known.IsEmpty)
+            return [new DeviceReading(PlaceholderDevice, NoReading(PlaceholderDevice, MissingDeviceState(), now))];
+
+        var openChannelKeys = _channels.Where(channel => !channel.IsClosed).Select(channel => channel.Key).ToHashSet();
+        return _routes.Known.InFirstSeenOrder.Select(device =>
+        {
+            if (statuses.TryGetValue(device.Id, out var status))
+            {
+                if (status is not null)
+                    LogState(device, status.Connection);
+                return new DeviceReading(device, status);
+            }
+            var state = _routes.Known.StateWhenNotAnswering(device, openChannelKeys);
+            return new DeviceReading(device, NoReading(device, state, now));
+        }).ToList();
+    }
+
+    private bool LoseChannels(IReadOnlyList<HidPpChannel> channels)
+    {
+        foreach (var channel in channels)
+            Lost(channel);
+        return channels.Count > 0;
+    }
+
+    private void Lost(HidPpChannel channel)
+    {
+        AppLog.Write($"Device lost: {channel.Key}");
+        channel.Dispose();
+        _channels.Remove(channel);
+        _routes.DropRoutesOn(channel);
         _rediscover = true;
     }
 
@@ -159,28 +195,26 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
             channel.Dispose();
         _channels.Clear();
         _devicesFailedToOpen.Clear(); // after a resume, a device that still cannot be opened is logged again
-        ForgetTarget();
+        _routes.Clear();
     }
 
-    private void ForgetTarget() => _target = null;
-
     // A receiver without an answering mouse means the mouse sleeps or is off.
-    // shortcut: any open HID++ device counts as that receiver, so another Logitech device alone reads as Asleep; revisit with multi-device support.
-    private ConnectionState MissingTargetState() =>
+    // shortcut: any open HID++ device counts as that receiver, so another Logitech device alone reads as Asleep; the placeholder disappears once a device with Unified Battery is found.
+    private ConnectionState MissingDeviceState() =>
         _channels.Any(channel => !channel.IsClosed) ? ConnectionState.Asleep : ConnectionState.NotFound;
 
-    private BatteryStatus NoReading(ConnectionState state, DateTimeOffset now)
+    private BatteryStatus NoReading(DeviceInfo device, ConnectionState state, DateTimeOffset now)
     {
-        LogState(state);
+        LogState(device, state);
         return new BatteryStatus(state, null, ChargingState.Unknown, now);
     }
 
-    private void LogState(ConnectionState state)
+    private void LogState(DeviceInfo device, ConnectionState state)
     {
-        if (state == _lastState)
+        if (_lastStates.TryGetValue(device.Id, out var lastState) && lastState == state)
             return;
-        _lastState = state;
-        AppLog.Write($"Connection: {state}");
+        _lastStates[device.Id] = state;
+        AppLog.Write($"Connection: {device.Name} {state}");
     }
 
     private void RefreshChannels(CancellationToken cancellationToken)

@@ -3,57 +3,42 @@ using LogitechBattery.HidPp;
 
 namespace LogitechBattery;
 
-/// <summary>The mouse found by discovery: the channel it answers on, its device and Unified Battery feature index, and who it is.</summary>
+/// <summary>A device with Unified Battery found by discovery: the channel it answers on, its device and battery feature index, and who it is.</summary>
 internal sealed record BatteryTarget(HidPpChannel Channel, byte DeviceIndex, byte FeatureIndex, DeviceInfo Device);
 
-/// <summary>Finds the mouse among the open HID++ channels: first the cable's device index, then the receiver slots.</summary>
+/// <summary>What answers at one device index of a channel.</summary>
+internal abstract record SlotProbe
+{
+    public static readonly SlotProbe NoDevice = new NoDeviceProbe();
+
+    private sealed record NoDeviceProbe : SlotProbe;
+
+    /// <summary>A HID++ 2.0 device that has no Unified Battery (for example a keyboard with another battery feature).</summary>
+    public sealed record NoUnifiedBattery(string DeviceName) : SlotProbe;
+
+    public sealed record Found(BatteryTarget Target) : SlotProbe;
+}
+
+/// <summary>Asks one device index of a channel who is there and whether it reports its battery.</summary>
 internal static class DeviceDiscovery
 {
     /// <summary>How long a quick one-shot request (discovery, receiver flags) may wait for its answer; a sleeping device does not answer.</summary>
     public static readonly TimeSpan Timeout = TimeSpan.FromMilliseconds(500);
 
-    // shortcut: single supported model until device selection (multiple devices) is implemented
-    private const string SupportedDeviceName = "PRO X2 SUPERSTRIKE";
+    private const string UnnamedDeviceName = "Logitech device";
 
-    /// <summary>Pass 1: the cable's device index; pass 2: the receiver slots. First HID++ 2.0 device with Unified Battery wins.</summary>
-    public static BatteryTarget? Discover(IEnumerable<HidPpChannel> channels, CancellationToken cancellationToken)
+    /// <summary>Throws IOException or TimeoutException when the channel itself fails.</summary>
+    public static SlotProbe Probe(HidPpChannel channel, byte deviceIndex, CancellationToken cancellationToken)
     {
-        foreach (var deviceIndexes in new[] { HidPpMessage.CableDeviceIndexes, HidPpMessage.ReceiverDeviceIndexes })
-        {
-            foreach (var channel in channels.Where(channel => !channel.IsClosed))
-            {
-                if (FindTarget(channel, deviceIndexes, cancellationToken) is { } target)
-                    return target;
-            }
-        }
-        return null;
-    }
+        if (RequestDuringDiscovery(channel, HidPpMessage.BuildPing(deviceIndex), cancellationToken) is null)
+            return SlotProbe.NoDevice;
 
-    private static BatteryTarget? FindTarget(HidPpChannel channel, IEnumerable<byte> deviceIndexes, CancellationToken cancellationToken)
-    {
-        foreach (var deviceIndex in deviceIndexes)
-        {
-            try
-            {
-                if (FindBatteryFeatureIndex(channel, deviceIndex, cancellationToken) is not { } featureIndex)
-                    continue;
+        var name = ReadName(channel, deviceIndex, cancellationToken) ?? UnnamedDeviceName;
+        if (FindFeatureIndex(channel, deviceIndex, UnifiedBattery.FeatureId, cancellationToken) is not { } featureIndex)
+            return new SlotProbe.NoUnifiedBattery(name);
 
-                var name = ReadName(channel, deviceIndex, cancellationToken);
-                if (name != SupportedDeviceName)
-                {
-                    AppLog.Write($"Skipping device: PID {channel.ProductId:X4}, devIdx {deviceIndex:X2}, name {(name is null ? "unreadable" : $"\"{name}\"")}");
-                    continue;
-                }
-                AppLog.Write($"Device found: PID {channel.ProductId:X4}, devIdx {deviceIndex:X2}, battery feature index {featureIndex:X2}");
-                var device = new DeviceInfo(ReadId(channel, deviceIndex, name, cancellationToken), name);
-                return new BatteryTarget(channel, deviceIndex, featureIndex, device);
-            }
-            catch (Exception ex) when (ex is IOException or TimeoutException)
-            {
-                break; // the channel itself failed (e.g. unplugged): the remaining indexes would fail the same way
-            }
-        }
-        return null;
+        var device = new DeviceInfo(ReadId(channel, deviceIndex, name, cancellationToken), name);
+        return new SlotProbe.Found(new BatteryTarget(channel, deviceIndex, featureIndex, device));
     }
 
     /// <summary>The unit ID (feature 0x0003); the route fallback if the device has none, does not answer or reports an invalid one.</summary>
@@ -76,13 +61,6 @@ internal static class DeviceDiscovery
             return null;
 
         return DeviceId.TryParse(DeviceInformation.UnitIdOf(HidPpMessage.ParamsOf(response)), out var unitId) ? unitId : null;
-    }
-
-    private static byte? FindBatteryFeatureIndex(HidPpChannel channel, byte deviceIndex, CancellationToken cancellationToken)
-    {
-        if (RequestDuringDiscovery(channel, HidPpMessage.BuildPing(deviceIndex), cancellationToken) is null)
-            return null;
-        return FindFeatureIndex(channel, deviceIndex, UnifiedBattery.FeatureId, cancellationToken);
     }
 
     /// <summary>Asks the root feature for the index of <paramref name="featureId"/>; null if unsupported or unanswered.</summary>
