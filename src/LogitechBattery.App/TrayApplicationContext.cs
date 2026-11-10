@@ -30,7 +30,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly DeviceHistories? _histories;
     private BatteryHistory? _history; // of the first device: the drain rate, the overlay and the tooltip follow it
     private readonly SettingsFile _settingsFile;
-    private AlertSettings _settings;
+    private AppSettings _settings;
     private readonly BatteryAlerts _alerts = new();
     private readonly FollowUpSchedule _followUpSchedule = new();
     private readonly StuckReadWatch _stuckReadWatch = new(StuckReadAfter);
@@ -91,12 +91,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (_provider is MockBatteryProvider mock)
         {
             menu.Items.Add(BuildSimulatorMenu(mock));
-            menu.Items.Add(NotificationsMenu.Build(() => _settings, ApplySettings));
+            menu.Items.Add(NotificationsMenu.Build(() => _settings.Alerts, ApplyAlertSettings));
             menu.Items.Add(new ToolStripSeparator());
         }
         else
         {
-            menu.Items.Add(NotificationsMenu.Build(() => _settings, ApplySettings));
+            menu.Items.Add(NotificationsMenu.Build(() => _settings.Alerts, ApplyAlertSettings));
             menu.Items.Add(new ToolStripSeparator());
             var startItem = BuildStartupItem();
             menu.Opening += (_, _) => startItem.Checked = AutoStart.IsEnabled();
@@ -188,10 +188,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         return clearItem;
     }
 
-    private void ApplySettings(AlertSettings updated)
+    private void ApplyAlertSettings(AlertSettings updated)
     {
-        _settings = updated; // applies for this session even when the save fails
-        if (_settingsFile.Save(updated) is { } problem)
+        _settings = _settings with { Alerts = updated }; // applies for this session even when the save fails
+        if (_settingsFile.Save(_settings) is { } problem)
             ShowWarning(problem);
         _ = RefreshAsync(); // a new level is checked against the current battery at once
     }
@@ -345,7 +345,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             if (indicator != _indicator || iconSize != _iconSize)
                 ReplaceIcon(indicator, iconSize);
 
-            if (status is not null && _alerts.Update(status, _settings) is { } alert)
+            if (status is not null && _alerts.Update(status, _settings.Alerts) is { } alert)
                 ShowAlert(alert, status.Percent);
         }
         catch (Exception ex)

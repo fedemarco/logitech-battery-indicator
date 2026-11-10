@@ -4,7 +4,11 @@ namespace LogitechBattery.Tests;
 
 public sealed class SettingsFileTests : IDisposable
 {
-    private static readonly AlertSettings NonDefault = new(LowPercent: 20, FullChargeAlert: false);
+    private static readonly AlertSettings NonDefaultAlerts = new(LowPercent: 20, FullChargeAlert: false);
+    private static readonly AppSettings NonDefault = AppSettings.Default with { Alerts = NonDefaultAlerts };
+    private static readonly DeviceId MouseId = DeviceId.Parse("A1B2C3D4");
+    private static readonly DeviceId KeyboardId = DeviceId.Parse("0A0B0C0D");
+    private static readonly DeviceId RouteId = DeviceId.Parse("RC0A1S02");
 
     private readonly TempFolder _folder = new();
     private string FilePath => _folder.FileNamed("settings.ini");
@@ -23,7 +27,7 @@ public sealed class SettingsFileTests : IDisposable
 
     [Fact]
     public void Missing_file_gives_the_defaults() =>
-        Assert.Equal(AlertSettings.Default, CreateSettingsFile().Load());
+        Assert.Equal(AppSettings.Default, CreateSettingsFile().Load());
 
     [Fact]
     public void Save_creates_a_missing_folder()
@@ -38,7 +42,7 @@ public sealed class SettingsFileTests : IDisposable
     {
         CreateSettingsFile().Save(NonDefault);
 
-        Assert.Equal(NonDefault, CreateSettingsFile().Load());
+        Assert.Equal(NonDefaultAlerts, CreateSettingsFile().Load().Alerts);
     }
 
     [Fact]
@@ -50,11 +54,137 @@ public sealed class SettingsFileTests : IDisposable
             [
                 "# Logitech Battery settings. Exit the app before you edit this file: it reads the file only at startup.",
                 "# lowAlertPercent: one of 10, 15, 20. fullChargeAlert: true or false.",
-                "version=1",
+                "# The trayDevice and device lines are written by the app.",
+                "version=2",
                 "lowAlertPercent=20",
                 "fullChargeAlert=false",
             ],
             File.ReadAllLines(FilePath));
+    }
+
+    private static AppSettings WithDevices(DeviceId? trayDevice, params (DeviceId Id, string Name)[] names) =>
+        new(NonDefaultAlerts, trayDevice, names.ToDictionary(entry => entry.Id, entry => entry.Name));
+
+    private string[] SaveAndReadLines(AppSettings settings)
+    {
+        CreateSettingsFile().Save(settings);
+        return File.ReadAllLines(FilePath);
+    }
+
+    [Fact]
+    public void Tray_device_and_device_names_load_back_unchanged()
+    {
+        CreateSettingsFile().Save(WithDevices(MouseId, (MouseId, "PRO X2"), (RouteId, "Keyboard")));
+
+        var loaded = CreateSettingsFile().Load();
+
+        Assert.Equal(MouseId, loaded.TrayDevice);
+        Assert.Equal(new Dictionary<DeviceId, string> { [MouseId] = "PRO X2", [RouteId] = "Keyboard" }, loaded.DeviceNames);
+    }
+
+    [Fact]
+    public void Saved_version_2_file_has_the_exact_format_with_names_sorted_by_id()
+    {
+        var lines = SaveAndReadLines(WithDevices(MouseId, (MouseId, "PRO X2"), (RouteId, "Keyboard"), (KeyboardId, "Dock")));
+
+        Assert.Equal(
+            [
+                "# Logitech Battery settings. Exit the app before you edit this file: it reads the file only at startup.",
+                "# lowAlertPercent: one of 10, 15, 20. fullChargeAlert: true or false.",
+                "# The trayDevice and device lines are written by the app.",
+                "version=2",
+                "lowAlertPercent=20",
+                "fullChargeAlert=false",
+                "trayDevice=A1B2C3D4",
+                "device.0A0B0C0D.name=Dock",
+                "device.A1B2C3D4.name=PRO X2",
+                "device.RC0A1S02.name=Keyboard",
+            ],
+            lines);
+    }
+
+    [Fact]
+    public void Version_1_file_loads_without_devices_and_is_saved_as_version_2()
+    {
+        WriteFile("version=1", "lowAlertPercent=20", "fullChargeAlert=false");
+        var settings = CreateSettingsFile();
+
+        var loaded = settings.Load();
+
+        Assert.Equal(NonDefaultAlerts, loaded.Alerts);
+        Assert.Null(loaded.TrayDevice);
+        Assert.Empty(loaded.DeviceNames);
+        Assert.Null(settings.Save(loaded));
+        Assert.Contains("version=2", File.ReadAllLines(FilePath));
+    }
+
+    [Fact]
+    public void Invalid_tray_device_is_ignored_with_one_problem()
+    {
+        var parsed = Parse("trayDevice=not-an-id");
+
+        Assert.Null(parsed.Settings.TrayDevice);
+        Assert.Contains("trayDevice", Assert.Single(parsed.Problems));
+    }
+
+    [Fact]
+    public void Device_name_key_with_an_invalid_id_is_an_unknown_key()
+    {
+        var parsed = Parse("device.a1b2c3d4.name=Mouse");
+
+        Assert.Empty(parsed.Settings.DeviceNames);
+        Assert.Contains("device.a1b2c3d4.name", Assert.Single(parsed.Problems));
+    }
+
+    [Fact]
+    public void Device_name_key_with_an_invalid_id_is_dropped_at_the_next_save()
+    {
+        WriteFile("device.zzz.name=Mouse");
+        var settings = CreateSettingsFile();
+
+        settings.Save(settings.Load());
+
+        Assert.DoesNotContain("device.zzz", File.ReadAllText(FilePath));
+    }
+
+    [Fact]
+    public void Device_name_with_a_line_break_or_control_characters_is_cleaned_when_written()
+    {
+        var lines = SaveAndReadLines(WithDevices(null, (MouseId, "PRO\r\nX2\u0007\tfoo=bar")));
+
+        Assert.Equal("device.A1B2C3D4.name=PROX2foo=bar", lines[^1]);
+        Assert.Equal(7, lines.Length);
+    }
+
+    [Fact]
+    public void Device_name_longer_than_64_characters_is_cut_when_written()
+    {
+        var lines = SaveAndReadLines(WithDevices(null, (MouseId, new string('x', 100))));
+
+        Assert.Equal("device.A1B2C3D4.name=" + new string('x', 64), lines[^1]);
+    }
+
+    [Fact]
+    public void Device_name_that_is_empty_after_cleaning_is_not_written()
+    {
+        var lines = SaveAndReadLines(WithDevices(null, (MouseId, "\r\n\t "), (KeyboardId, "")));
+
+        Assert.DoesNotContain(lines, line => line.StartsWith("device."));
+    }
+
+    [Fact]
+    public void Version_3_file_keeps_its_device_values_readable_and_is_never_overwritten()
+    {
+        WriteFile("version=3", "trayDevice=A1B2C3D4", "device.A1B2C3D4.name=PRO X2");
+        var before = File.ReadAllBytes(FilePath);
+        var settings = CreateSettingsFile();
+
+        var loaded = settings.Load();
+
+        Assert.Equal(MouseId, loaded.TrayDevice);
+        Assert.Equal("PRO X2", loaded.DeviceNames[MouseId]);
+        Assert.NotNull(settings.Save(loaded));
+        Assert.Equal(before, File.ReadAllBytes(FilePath));
     }
 
     [Fact]
@@ -71,7 +201,7 @@ public sealed class SettingsFileTests : IDisposable
         WriteFile();
         var settings = CreateSettingsFile();
 
-        Assert.Equal(AlertSettings.Default, settings.Load());
+        Assert.Equal(AlertSettings.Default, settings.Load().Alerts);
         Assert.Null(settings.Save(NonDefault));
     }
 
@@ -80,7 +210,7 @@ public sealed class SettingsFileTests : IDisposable
     {
         var parsed = Parse("# a comment", "", "  lowAlertPercent  =  20  ", "\tfullChargeAlert=FALSE");
 
-        Assert.Equal(NonDefault, parsed.Settings);
+        Assert.Equal(NonDefaultAlerts, parsed.Settings.Alerts);
         Assert.Empty(parsed.Problems);
     }
 
@@ -89,7 +219,7 @@ public sealed class SettingsFileTests : IDisposable
         Assert.False(Parse("lowAlertPercent=20").IsNewerVersion);
 
     [Theory]
-    [InlineData("2")]
+    [InlineData("3")]
     [InlineData("0")]
     [InlineData("abc")]
     [InlineData("")]
@@ -98,7 +228,7 @@ public sealed class SettingsFileTests : IDisposable
         var parsed = Parse($"version={version}", "lowAlertPercent=20");
 
         Assert.True(parsed.IsNewerVersion);
-        Assert.Equal(20, parsed.Settings.LowPercent);
+        Assert.Equal(20, parsed.Settings.Alerts.LowPercent);
     }
 
     [Theory]
@@ -113,7 +243,7 @@ public sealed class SettingsFileTests : IDisposable
     {
         var parsed = Parse($"lowAlertPercent={badValue}", "fullChargeAlert=false");
 
-        Assert.Equal(new AlertSettings(AlertSettings.Default.LowPercent, FullChargeAlert: false), parsed.Settings);
+        Assert.Equal(new AlertSettings(AlertSettings.Default.LowPercent, FullChargeAlert: false), parsed.Settings.Alerts);
         Assert.Single(parsed.Problems);
     }
 
@@ -122,7 +252,7 @@ public sealed class SettingsFileTests : IDisposable
     {
         var parsed = Parse("lowAlertPercent=20", "fullChargeAlert=yes");
 
-        Assert.Equal(new AlertSettings(LowPercent: 20, AlertSettings.Default.FullChargeAlert), parsed.Settings);
+        Assert.Equal(new AlertSettings(LowPercent: 20, AlertSettings.Default.FullChargeAlert), parsed.Settings.Alerts);
         Assert.Single(parsed.Problems);
     }
 
@@ -147,7 +277,7 @@ public sealed class SettingsFileTests : IDisposable
     {
         var parsed = Parse("LowAlertPercent=20");
 
-        Assert.Equal(AlertSettings.Default, parsed.Settings);
+        Assert.Equal(AlertSettings.Default, parsed.Settings.Alerts);
         Assert.Single(parsed.Problems);
     }
 
@@ -156,7 +286,7 @@ public sealed class SettingsFileTests : IDisposable
     {
         var parsed = Parse("hello", "lowAlertPercent=20");
 
-        Assert.Equal(20, parsed.Settings.LowPercent);
+        Assert.Equal(20, parsed.Settings.Alerts.LowPercent);
         Assert.Contains("line 1", Assert.Single(parsed.Problems));
     }
 
@@ -165,7 +295,7 @@ public sealed class SettingsFileTests : IDisposable
     {
         var parsed = Parse("lowAlertPercent=10", "lowAlertPercent=20");
 
-        Assert.Equal(20, parsed.Settings.LowPercent);
+        Assert.Equal(20, parsed.Settings.Alerts.LowPercent);
         Assert.Empty(parsed.Problems);
     }
 
@@ -175,18 +305,18 @@ public sealed class SettingsFileTests : IDisposable
         Directory.CreateDirectory(_folder.Path);
         File.WriteAllText(FilePath, "lowAlertPercent=20" + Environment.NewLine, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
-        Assert.Equal(20, CreateSettingsFile().Load().LowPercent);
+        Assert.Equal(20, CreateSettingsFile().Load().Alerts.LowPercent);
     }
 
     [Fact]
     public void Newer_version_is_never_overwritten()
     {
-        WriteFile("version=2", "lowAlertPercent=20", "somethingNew=1");
+        WriteFile("version=3", "lowAlertPercent=20", "somethingNew=1");
         var before = File.ReadAllBytes(FilePath);
         var settings = CreateSettingsFile();
 
-        Assert.Equal(20, settings.Load().LowPercent);
-        Assert.NotNull(settings.Save(AlertSettings.Default));
+        Assert.Equal(20, settings.Load().Alerts.LowPercent);
+        Assert.NotNull(settings.Save(AppSettings.Default));
         Assert.Equal(before, File.ReadAllBytes(FilePath));
     }
 
@@ -198,7 +328,7 @@ public sealed class SettingsFileTests : IDisposable
         var before = File.ReadAllBytes(FilePath);
         var settings = CreateSettingsFile();
 
-        Assert.Equal(AlertSettings.Default, settings.Load());
+        Assert.Equal(AppSettings.Default, settings.Load());
         Assert.NotNull(settings.Save(NonDefault));
         Assert.Equal(before, File.ReadAllBytes(FilePath));
     }
@@ -211,7 +341,7 @@ public sealed class SettingsFileTests : IDisposable
         var settings = CreateSettingsFile();
 
         using (new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.None))
-            Assert.Equal(AlertSettings.Default, settings.Load());
+            Assert.Equal(AppSettings.Default, settings.Load());
 
         Assert.NotNull(settings.Save(NonDefault));
         Assert.Equal(before, File.ReadAllBytes(FilePath));
@@ -224,8 +354,8 @@ public sealed class SettingsFileTests : IDisposable
         File.WriteAllText(FilePath + ".tmp", "garbage");
         var settings = CreateSettingsFile();
 
-        Assert.Equal(20, settings.Load().LowPercent);
-        settings.Save(AlertSettings.Default);
+        Assert.Equal(20, settings.Load().Alerts.LowPercent);
+        settings.Save(AppSettings.Default);
 
         Assert.Equal([FilePath], Directory.GetFiles(_folder.Path));
     }
@@ -249,7 +379,7 @@ public sealed class SettingsFileTests : IDisposable
         settings.Load();
 
         using (new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-            Assert.NotNull(settings.Save(AlertSettings.Default));
+            Assert.NotNull(settings.Save(AppSettings.Default));
 
         Assert.Equal(before, File.ReadAllBytes(FilePath));
         Assert.Equal([FilePath], Directory.GetFiles(_folder.Path));

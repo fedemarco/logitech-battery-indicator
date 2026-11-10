@@ -1,19 +1,24 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using LogitechBattery.Battery;
 
 namespace LogitechBattery;
 
-/// <summary>settings.ini: read once at startup, written only when the user changes a setting. Never throws.</summary>
+/// <summary>settings.ini: read once at startup, written only when a setting, the tray device or a device name changes. Never throws.</summary>
 public sealed class SettingsFile(string path)
 {
-    internal const string SupportedVersion = "1";
+    internal const string CurrentVersion = "2";
     internal const long MaxBytes = 64 * 1024;
 
     private const string VersionKey = "version";
     private const string LowPercentKey = "lowAlertPercent";
     private const string FullChargeAlertKey = "fullChargeAlert";
     private const int MaxQuotedCharacters = 40;
+    private const int MaxNameCharacters = 64;
+    private const string TrayDeviceKey = "trayDevice";
+    private const string DeviceKeyPrefix = "device.";
+    private const string DeviceNameKeySuffix = ".name";
 
     private const string NewerVersionReason =
         "settings.ini has a version that this version of Logitech Battery does not know (a newer one?), so it does not change the file. The new setting applies until you exit.";
@@ -22,17 +27,19 @@ public sealed class SettingsFile(string path)
     private const string SaveFailedReason =
         "Couldn't save the settings. Close any program that has settings.ini open and try again. The new setting applies until you exit.";
 
-    private static readonly string[] KnownKeys = [VersionKey, LowPercentKey, FullChargeAlertKey];
+    // Version 1 has no device keys, so it reads as a version 2 file without them.
+    private static readonly string[] ReadableVersions = ["1", CurrentVersion];
+    private static readonly string[] KnownKeys = [VersionKey, LowPercentKey, FullChargeAlertKey, TrayDeviceKey];
 
     // The file may hold values this version cannot read or does not know, so a save would lose them.
     private string? _doNotOverwriteReason;
 
-    public AlertSettings Load()
+    public AppSettings Load()
     {
         try
         {
             if (!File.Exists(path))
-                return AlertSettings.Default;
+                return AppSettings.Default;
             if (new FileInfo(path).Length > MaxBytes)
                 return KeepFileAndUseDefaults("settings.ini is larger than 64 KB; using the defaults");
 
@@ -56,15 +63,15 @@ public sealed class SettingsFile(string path)
         }
     }
 
-    private AlertSettings KeepFileAndUseDefaults(string logMessage)
+    private AppSettings KeepFileAndUseDefaults(string logMessage)
     {
         AppLog.Write($"Settings: {logMessage}");
         _doNotOverwriteReason = UnreadableReason;
-        return AlertSettings.Default;
+        return AppSettings.Default;
     }
 
     /// <summary>Returns null when saved, otherwise a reason the user can read.</summary>
-    public string? Save(AlertSettings settings)
+    public string? Save(AppSettings settings)
     {
         if (_doNotOverwriteReason is not null)
             return _doNotOverwriteReason;
@@ -109,29 +116,55 @@ public sealed class SettingsFile(string path)
         }
     }
 
-    internal static string Format(AlertSettings settings) =>
-        string.Join(Environment.NewLine,
-            "# Logitech Battery settings. Exit the app before you edit this file: it reads the file only at startup.",
-            $"# {LowPercentKey}: one of {ChoicesText}. {FullChargeAlertKey}: true or false.",
-            $"{VersionKey}={SupportedVersion}",
-            $"{LowPercentKey}={settings.LowPercent.ToString(CultureInfo.InvariantCulture)}",
-            $"{FullChargeAlertKey}={(settings.FullChargeAlert ? "true" : "false")}",
-            "");
+    internal static string Format(AppSettings settings) =>
+        string.Join(Environment.NewLine, FormatLines(settings));
+
+    private static IEnumerable<string> FormatLines(AppSettings settings)
+    {
+        yield return "# Logitech Battery settings. Exit the app before you edit this file: it reads the file only at startup.";
+        yield return $"# {LowPercentKey}: one of {ChoicesText}. {FullChargeAlertKey}: true or false.";
+        yield return "# The trayDevice and device lines are written by the app.";
+        yield return $"{VersionKey}={CurrentVersion}";
+        yield return $"{LowPercentKey}={settings.Alerts.LowPercent.ToString(CultureInfo.InvariantCulture)}";
+        yield return $"{FullChargeAlertKey}={(settings.Alerts.FullChargeAlert ? "true" : "false")}";
+        if (settings.TrayDevice is not null)
+            yield return $"{TrayDeviceKey}={settings.TrayDevice}";
+
+        foreach (var (id, name) in settings.DeviceNames.OrderBy(entry => entry.Key.ToString(), StringComparer.Ordinal))
+        {
+            var cleanName = CleanName(name);
+            if (cleanName.Length > 0)
+                yield return $"{DeviceKeyPrefix}{id}{DeviceNameKeySuffix}={cleanName}";
+        }
+        yield return "";
+    }
+
+    /// <summary>A name must never add a line or break the format: no control characters (CR and LF included), at most 64 characters.</summary>
+    private static string CleanName(string name)
+    {
+        var withoutControls = new string(name.Where(character => !char.IsControl(character)).ToArray()).Trim();
+        var cut = withoutControls.Length <= MaxNameCharacters ? withoutControls : withoutControls[..MaxNameCharacters];
+        // A cut inside a surrogate pair would write an invalid character.
+        return cut.Length > 0 && char.IsHighSurrogate(cut[^1]) ? cut[..^1] : cut;
+    }
 
     internal static ParsedSettings Parse(IEnumerable<string> lines)
     {
         var problems = new List<string>();
-        var values = ReadKnownValues(lines, problems);
+        var deviceNames = new Dictionary<DeviceId, string>();
+        var values = ReadKnownValues(lines, deviceNames, problems);
 
-        var isNewerVersion = values.TryGetValue(VersionKey, out var version) && version != SupportedVersion;
-        var settings = new AlertSettings(
+        var isNewerVersion = values.TryGetValue(VersionKey, out var version) && !ReadableVersions.Contains(version);
+        var alerts = new AlertSettings(
             LowPercentFrom(values, problems),
             FullChargeAlertFrom(values, problems));
+        var settings = new AppSettings(alerts, TrayDeviceFrom(values, problems), deviceNames);
         return new ParsedSettings(settings, isNewerVersion, problems);
     }
 
-    /// <summary>Key and value of each known key; the last line wins for a repeated key.</summary>
-    private static Dictionary<string, string> ReadKnownValues(IEnumerable<string> lines, List<string> problems)
+    /// <summary>Value of each known key and the device names; the last line wins for a repeated key.</summary>
+    private static Dictionary<string, string> ReadKnownValues(
+        IEnumerable<string> lines, Dictionary<DeviceId, string> deviceNames, List<string> problems)
     {
         var values = new Dictionary<string, string>();
         var lineNumber = 0;
@@ -150,14 +183,43 @@ public sealed class SettingsFile(string path)
             }
 
             var key = line[..equalsAt].Trim();
-            if (!KnownKeys.Contains(key))
-            {
+            var value = line[(equalsAt + 1)..].Trim();
+            if (TryParseDeviceNameKey(key, out var id))
+                SetName(deviceNames, id, value);
+            else if (KnownKeys.Contains(key))
+                values[key] = value;
+            else
                 problems.Add($"unknown key '{Quote(key)}'");
-                continue;
-            }
-            values[key] = line[(equalsAt + 1)..].Trim();
         }
         return values;
+    }
+
+    private static void SetName(Dictionary<DeviceId, string> deviceNames, DeviceId id, string value)
+    {
+        var cleanName = CleanName(value);
+        if (cleanName.Length > 0)
+            deviceNames[id] = cleanName;
+    }
+
+    private static bool TryParseDeviceNameKey(string key, [NotNullWhen(true)] out DeviceId? id)
+    {
+        id = null;
+        if (!key.StartsWith(DeviceKeyPrefix, StringComparison.Ordinal) || !key.EndsWith(DeviceNameKeySuffix, StringComparison.Ordinal))
+            return false;
+
+        var idLength = key.Length - DeviceKeyPrefix.Length - DeviceNameKeySuffix.Length;
+        return idLength > 0 && DeviceId.TryParse(key.Substring(DeviceKeyPrefix.Length, idLength), out id);
+    }
+
+    private static DeviceId? TrayDeviceFrom(Dictionary<string, string> values, List<string> problems)
+    {
+        if (!values.TryGetValue(TrayDeviceKey, out var text))
+            return null;
+
+        if (DeviceId.TryParse(text, out var id))
+            return id;
+        problems.Add($"{TrayDeviceKey}={Quote(text)} is not a device ID; ignoring it");
+        return null;
     }
 
     private static int LowPercentFrom(Dictionary<string, string> values, List<string> problems)
@@ -191,4 +253,4 @@ public sealed class SettingsFile(string path)
         text.Length <= MaxQuotedCharacters ? text : text[..MaxQuotedCharacters] + "…";
 }
 
-internal sealed record ParsedSettings(AlertSettings Settings, bool IsNewerVersion, IReadOnlyList<string> Problems);
+internal sealed record ParsedSettings(AppSettings Settings, bool IsNewerVersion, IReadOnlyList<string> Problems);
