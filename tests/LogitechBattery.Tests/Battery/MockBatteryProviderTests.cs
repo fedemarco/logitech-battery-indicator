@@ -18,7 +18,7 @@ public class MockBatteryProviderTests
     private const double NextCycleStart = MockBatteryProvider.CycleSeconds;
     private const double Epsilon = 0.1;
 
-    private static BatteryStatus Read(MockBatteryProvider provider) => provider.ReadAsync().Result;
+    private static BatteryStatus Read(MockBatteryProvider provider) => provider.ReadAsync().Result[0].Status!;
 
     private static BatteryStatus ReadAt(double seconds)
     {

@@ -1,9 +1,10 @@
+using LogitechBattery.Battery;
 using LogitechBattery.HidPp;
 
 namespace LogitechBattery;
 
-/// <summary>The mouse found by discovery: the channel it answers on, and its device and Unified Battery feature index.</summary>
-internal sealed record BatteryTarget(HidPpChannel Channel, byte DeviceIndex, byte FeatureIndex);
+/// <summary>The mouse found by discovery: the channel it answers on, its device and Unified Battery feature index, and who it is.</summary>
+internal sealed record BatteryTarget(HidPpChannel Channel, byte DeviceIndex, byte FeatureIndex, DeviceInfo Device);
 
 /// <summary>Finds the mouse among the open HID++ channels: first the cable's device index, then the receiver slots.</summary>
 internal static class DeviceDiscovery
@@ -44,7 +45,8 @@ internal static class DeviceDiscovery
                     continue;
                 }
                 AppLog.Write($"Device found: PID {channel.ProductId:X4}, devIdx {deviceIndex:X2}, battery feature index {featureIndex:X2}");
-                return new BatteryTarget(channel, deviceIndex, featureIndex);
+                var device = new DeviceInfo(ReadId(channel, deviceIndex, name, cancellationToken), name);
+                return new BatteryTarget(channel, deviceIndex, featureIndex, device);
             }
             catch (Exception ex) when (ex is IOException or TimeoutException)
             {
@@ -52,6 +54,28 @@ internal static class DeviceDiscovery
             }
         }
         return null;
+    }
+
+    /// <summary>The unit ID (feature 0x0003); the route fallback if the device has none, does not answer or reports an invalid one.</summary>
+    private static DeviceId ReadId(HidPpChannel channel, byte deviceIndex, string name, CancellationToken cancellationToken)
+    {
+        if (ReadUnitId(channel, deviceIndex, cancellationToken) is { } unitId)
+            return unitId;
+
+        AppLog.Write($"Device {name} has no unit ID; identity follows the slot");
+        return DeviceId.FromRoute(channel.ProductId, deviceIndex);
+    }
+
+    private static DeviceId? ReadUnitId(HidPpChannel channel, byte deviceIndex, CancellationToken cancellationToken)
+    {
+        if (FindFeatureIndex(channel, deviceIndex, DeviceInformation.FeatureId, cancellationToken) is not { } featureIndex)
+            return null;
+
+        var request = HidPpMessage.BuildRequest(deviceIndex, featureIndex, DeviceInformation.GetDeviceInfoFunction, HidPpMessage.SoftwareId);
+        if (RequestDuringDiscovery(channel, request, cancellationToken) is not { } response)
+            return null;
+
+        return DeviceId.TryParse(DeviceInformation.UnitIdOf(HidPpMessage.ParamsOf(response)), out var unitId) ? unitId : null;
     }
 
     private static byte? FindBatteryFeatureIndex(HidPpChannel channel, byte deviceIndex, CancellationToken cancellationToken)

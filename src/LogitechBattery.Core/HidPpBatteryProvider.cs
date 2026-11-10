@@ -12,9 +12,13 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
 {
     private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(1);
 
+    // Shown while no device was found yet this session; step 4 of multi-device support replaces it.
+    private static readonly DeviceInfo UnknownDevice = new(DeviceId.FromRoute(0, 0), "PRO X2 SUPERSTRIKE");
+
     private readonly object _readLock = new();
     private readonly List<HidPpChannel> _channels = [];
     private volatile BatteryTarget? _target;
+    private DeviceInfo? _lastDevice;
     private ConnectionState? _lastState;
     private volatile bool _rediscover = true;
     private volatile bool _reopen;
@@ -25,7 +29,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
 
     public HidPpBatteryProvider() => DeviceList.Local.Changed += OnUsbDevicesChanged;
 
-    public Task<BatteryStatus> ReadAsync(CancellationToken cancellationToken = default) => Task.Run(() => Read(cancellationToken), cancellationToken);
+    public Task<IReadOnlyList<DeviceReading>> ReadAsync(CancellationToken cancellationToken = default) => Task.Run(() => Read(cancellationToken), cancellationToken);
 
     /// <summary>
     /// Closes and opens every device again at the next read. Call after the PC resumed: the receiver may have forgotten
@@ -58,14 +62,15 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         }
     }
 
-    private BatteryStatus Read(CancellationToken cancellationToken)
+    private IReadOnlyList<DeviceReading> Read(CancellationToken cancellationToken)
     {
         lock (_readLock)
         {
             try
             {
                 // A lost device is followed by one immediate rediscovery (e.g. cable unplugged while the receiver is still there).
-                return ReadCore(cancellationToken) ?? ReadCore(cancellationToken) ?? NoReading(ConnectionState.NotFound, DateTimeOffset.Now);
+                var status = ReadCore(cancellationToken) ?? ReadCore(cancellationToken) ?? NoReading(ConnectionState.NotFound, DateTimeOffset.Now);
+                return [new DeviceReading(_lastDevice ?? UnknownDevice, status)];
             }
             catch (Exception ex)
             {
@@ -104,6 +109,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         if (_target is not { } target)
             return NoReading(MissingTargetState(), now);
 
+        _lastDevice = target.Device;
         return ReadStatus(target, now, cancellationToken);
     }
 

@@ -2,5 +2,5 @@ namespace LogitechBattery.Battery;
 
 public interface IBatteryProvider
 {
-    Task<BatteryStatus> ReadAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<DeviceReading>> ReadAsync(CancellationToken cancellationToken = default);
 }

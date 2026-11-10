@@ -265,7 +265,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         BatteryStatus? status = null;
         try
         {
-            status = await _provider.ReadAsync();
+            var readings = await _provider.ReadAsync();
+            status = readings[0].Status ?? throw new InvalidOperationException("The device reading failed.");
             statusLine = status.ToDisplayString();
             if (_history?.Record(status) == true)
             {

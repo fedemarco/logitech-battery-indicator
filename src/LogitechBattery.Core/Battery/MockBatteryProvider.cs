@@ -31,6 +31,8 @@ public sealed class MockBatteryProvider : IBatteryProvider
     // 100 % is reported as Full, so charging never shows it.
     private const int HighestChargingPercent = BatteryStatus.FullPercent - 1;
 
+    private static readonly DeviceInfo MockDevice = new(DeviceId.Parse("00000001"), "Mock mouse");
+
     private readonly TimeProvider _time;
     private MockMode _mode = MockMode.Auto;
     private long _cycleStart;
@@ -52,7 +54,7 @@ public sealed class MockBatteryProvider : IBatteryProvider
         }
     }
 
-    public Task<BatteryStatus> ReadAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<DeviceReading>> ReadAsync(CancellationToken cancellationToken = default)
     {
         var (connection, percent, charging) = _mode switch
         {
@@ -65,7 +67,8 @@ public sealed class MockBatteryProvider : IBatteryProvider
             MockMode.Asleep => NoReading(ConnectionState.Asleep),
             _ => NoReading(ConnectionState.NotFound),
         };
-        return Task.FromResult(new BatteryStatus(connection, percent, charging, _time.GetUtcNow()));
+        var status = new BatteryStatus(connection, percent, charging, _time.GetUtcNow());
+        return Task.FromResult<IReadOnlyList<DeviceReading>>([new DeviceReading(MockDevice, status)]);
     }
 
     private Reading AutoReading()
