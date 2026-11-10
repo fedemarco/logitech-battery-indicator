@@ -21,9 +21,12 @@ public sealed class DeviceHistories(string dataDirectory)
 
     private string PathOf(DeviceId id) => Path.Combine(Folder, id + FileExtension);
 
-    /// <summary>The first call for a device moves the old file in when it applies and prunes records older than the retention.</summary>
+    /// <summary>Throws for <see cref="DeviceInfo.NoDeviceYet"/>. The first call for a device moves the old file in when it applies and prunes records older than the retention.</summary>
     public BatteryHistory For(DeviceInfo device, DateTimeOffset now)
     {
+        if (device == DeviceInfo.NoDeviceYet)
+            throw new ArgumentException("A placeholder for a missing device has no history.", nameof(device));
+
         if (_histories.TryGetValue(device.Id, out var known))
             return known;
 

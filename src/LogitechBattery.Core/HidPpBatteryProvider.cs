@@ -12,10 +12,6 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
 {
     private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(1);
 
-    // Shown only while no device was found yet this session, so the app shows what it showed before multi-device support.
-    // Its id is no real route (product 0, slot 0); it only keys the logged connection state.
-    private static readonly DeviceInfo PlaceholderDevice = new(DeviceId.FromRoute(productId: 0, deviceIndex: 0), "PRO X2 SUPERSTRIKE");
-
     private enum RouteOutcome { Answered, NoAnswer, Failed, ChannelLost }
 
     /// <summary>What reading one route gave; <see cref="Status"/> is set only for <see cref="RouteOutcome.Answered"/>.</summary>
@@ -204,7 +200,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     private IReadOnlyList<DeviceReading> ToReadings(Dictionary<DeviceId, BatteryStatus?> statuses, DateTimeOffset now)
     {
         if (_routes.Known.IsEmpty)
-            return [new DeviceReading(PlaceholderDevice, NoReading(PlaceholderDevice, MissingDeviceState(), now))];
+            return [new DeviceReading(DeviceInfo.NoDeviceYet, NoReading(DeviceInfo.NoDeviceYet, MissingDeviceState(), now))];
 
         var openChannelKeys = _channels.Where(channel => !channel.IsClosed).Select(channel => channel.Key).ToHashSet();
         return _routes.Known.InFirstSeenOrder.Select(device => ReadingOf(device, statuses, openChannelKeys, now)).ToList();

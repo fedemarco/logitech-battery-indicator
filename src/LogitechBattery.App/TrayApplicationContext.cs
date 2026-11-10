@@ -315,6 +315,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         var now = DateTimeOffset.UtcNow;
         var firstDevice = readings[0].Device;
+        if (firstDevice == DeviceInfo.NoDeviceYet)
+            return false;
+
         var firstHistory = _histories.For(firstDevice, now);
         var changed = firstHistory != _history;
         _history = firstHistory;

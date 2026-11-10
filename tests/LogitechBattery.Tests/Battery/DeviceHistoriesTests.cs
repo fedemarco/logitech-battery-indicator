@@ -87,6 +87,18 @@ public sealed class DeviceHistoriesTests : IDisposable
     }
 
     [Fact]
+    public void The_placeholder_for_a_missing_device_has_no_history_and_leaves_the_old_file_alone()
+    {
+        WriteLegacy(Early);
+        var histories = NewSession();
+
+        Assert.Throws<ArgumentException>(() => histories.For(DeviceInfo.NoDeviceYet, Now));
+
+        Assert.True(File.Exists(LegacyPath));
+        Assert.False(Directory.Exists(HistoryFolder));
+    }
+
+    [Fact]
     public void Merging_removes_duplicate_lines_and_orders_by_time()
     {
         WriteLegacy(Late, Early, Middle);
