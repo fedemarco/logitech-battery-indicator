@@ -395,7 +395,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void ShowAlert(BatteryAlert alert, int? percent)
     {
-        var (title, text) = BatteryAlertText.For(alert, percent);
+        var (title, text) = BatteryAlertText.For(alert, percent, "Mouse");
         var icon = alert == BatteryAlert.Full ? ToolTipIcon.Info : ToolTipIcon.Warning;
         AppLog.Write($"Notification: {title} ({percent}%)");
         _notifyIcon.ShowBalloonTip(BalloonTimeoutMs, title, text, icon);
@@ -411,7 +411,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     }
 
     private string BuildTooltip(string? statusLine, string? remainingText) =>
-        TrayTooltip.Build(statusLine, remainingText, _displayVersion);
+        TrayTooltip.Build("Mouse", statusLine, remainingText, [], _displayVersion);
 
     private void ExitApp()
     {

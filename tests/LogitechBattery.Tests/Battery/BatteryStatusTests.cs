@@ -5,10 +5,10 @@ namespace LogitechBattery.Tests;
 public class BatteryStatusTests
 {
     [Theory]
-    [InlineData(ConnectionState.Asleep, null, ChargingState.Unknown, "Mouse asleep")]
-    [InlineData(ConnectionState.Asleep, 50, ChargingState.Charging, "Mouse asleep")]
-    [InlineData(ConnectionState.NotFound, null, ChargingState.Unknown, "Mouse not found")]
-    [InlineData(ConnectionState.NotFound, 50, ChargingState.Discharging, "Mouse not found")]
+    [InlineData(ConnectionState.Asleep, null, ChargingState.Unknown, "Asleep")]
+    [InlineData(ConnectionState.Asleep, 50, ChargingState.Charging, "Asleep")]
+    [InlineData(ConnectionState.NotFound, null, ChargingState.Unknown, "Not found")]
+    [InlineData(ConnectionState.NotFound, 50, ChargingState.Discharging, "Not found")]
     [InlineData(ConnectionState.Connected, 60, ChargingState.Charging, "Charging · 60%")]
     [InlineData(ConnectionState.Connected, null, ChargingState.Charging, "Charging")]
     [InlineData(ConnectionState.Connected, 100, ChargingState.Full, "Full · 100%")]

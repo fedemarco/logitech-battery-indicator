@@ -8,15 +8,15 @@ public sealed record BatteryStatus(
 {
     public const int FullPercent = 100;
 
-    /// <summary>Short text such as "85% · Discharging", "Charging · 60%", "Mouse asleep".</summary>
+    /// <summary>Short text such as "85% · Discharging", "Charging · 60%", "Asleep". The device name is shown with it.</summary>
     public string ToDisplayString()
     {
         switch (Connection)
         {
             case ConnectionState.Asleep:
-                return "Mouse asleep";
+                return "Asleep";
             case ConnectionState.NotFound:
-                return "Mouse not found";
+                return "Not found";
         }
 
         var percentText = Percent is { } percent ? $"{percent}%" : null;
