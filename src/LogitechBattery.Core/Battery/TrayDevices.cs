@@ -15,8 +15,6 @@ public sealed record TrayDevices(
 
     public string StatusLine => Tray.Status?.ToDisplayString() ?? ReadFailedText;
 
-    public string Headline => $"{TrayName}{TextSeparator}{StatusLine}";
-
     public static TrayDevices From(
         IReadOnlyList<DeviceReading> readings,
         DeviceId? saved,

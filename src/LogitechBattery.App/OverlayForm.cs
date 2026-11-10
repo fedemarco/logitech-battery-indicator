@@ -11,23 +11,27 @@ internal sealed class OverlayForm : Form
     private static class PanelLayout
     {
         public const int Width = 360;
-        public const int Height = 260;
+        public const int Height = PlotTop + PlotHeight + PlotBottomMargin;
         public const int Margin = 12;
         public const int ContentWidth = Width - 2 * Margin;
 
-        public const int StatusTop = 10;
+        public const int NameTop = 10;
+        public const int NameHeight = 18;
+
+        public const int StatusTop = NameTop + NameHeight;
         public const int StatusHeight = 24;
         public const int EstimateOffsetY = 3; // the smaller estimate text sits lower to share the status baseline
-        public const int LastChargeTop = 36;
+        public const int LastChargeTop = StatusTop + 26;
         public const int LastChargeHeight = 18;
 
-        public const int ToggleTop = 62;
+        public const int ToggleTop = LastChargeTop + 26;
         public const int ToggleWidth = 48;
         public const int ToggleHeight = 24;
         public const int ToggleGap = 6;
 
         public const int PlotLeft = 44; // room for the percent labels
-        public const int PlotTop = 100;
+        public const int PlotTop = ToggleTop + 38;
+        public const int PlotHeight = 126;
         public const int PlotRightMargin = 14;
         public const int PlotBottomMargin = 34; // room for the time labels
 
@@ -71,7 +75,8 @@ internal sealed class OverlayForm : Form
     private BatteryHistory? _history;
     private IReadOnlyList<HistoryRecord> _records = [];
     private BatteryStatus? _status;
-    private string _headline = "";
+    private string _deviceName = "";
+    private string _statusLine = "";
     private string _estimateText = "";
     private string? _lastChargeText;
     private bool _systemDrawsBorder;
@@ -97,12 +102,12 @@ internal sealed class OverlayForm : Form
 
     private float DpiScale => DeviceDpi / 96f;
 
-    /// <summary>The headline is the device name and its status.</summary>
-    public void SetStatus(BatteryStatus? status, string headline, double? drainPercentPerDay)
+    public void SetStatus(BatteryStatus? status, string deviceName, string statusLine, double? drainPercentPerDay)
     {
         _status = status;
-        _headline = headline;
-        _estimateText = _isSimulator ? "" : RemainingTime.EstimateText(status, drainPercentPerDay); // the simulator shows the headline only
+        _deviceName = deviceName;
+        _statusLine = statusLine;
+        _estimateText = _isSimulator ? "" : RemainingTime.EstimateText(status, drainPercentPerDay); // the simulator shows the status only
         UpdateLastChargeText();
         Invalidate();
     }
@@ -190,7 +195,7 @@ internal sealed class OverlayForm : Form
         PanelLayout.PlotLeft,
         PanelLayout.PlotTop,
         PanelLayout.Width - PanelLayout.PlotLeft - PanelLayout.PlotRightMargin,
-        PanelLayout.Height - PanelLayout.PlotTop - PanelLayout.PlotBottomMargin);
+        PanelLayout.PlotHeight);
 
     /// <summary>A box of logical size whose corner lies at a pixel position moved by logical offsets.</summary>
     private RectangleF BoxAt(PointF origin, float offsetX, float offsetY, float width, float height) =>
@@ -219,10 +224,12 @@ internal sealed class OverlayForm : Form
 
     private void DrawHeader(Graphics graphics)
     {
+        var nameLine = Scaled(PanelLayout.Margin, PanelLayout.NameTop, PanelLayout.ContentWidth, PanelLayout.NameHeight);
         var statusLine = Scaled(PanelLayout.Margin, PanelLayout.StatusTop, PanelLayout.ContentWidth, PanelLayout.StatusHeight);
         using var statusFont = PixelFont(PanelLayout.StatusFontSize, FontStyle.Bold);
         using var detailFont = PixelFont(PanelLayout.DetailFontSize);
-        DrawText(graphics, _headline, statusFont, PrimaryText, statusLine, StringAlignment.Near);
+        DrawText(graphics, _deviceName, detailFont, SecondaryText, nameLine, StringAlignment.Near);
+        DrawText(graphics, _statusLine, statusFont, PrimaryText, statusLine, StringAlignment.Near);
         DrawText(graphics, _estimateText, detailFont, SecondaryText, statusLine with { Y = statusLine.Y + PanelLayout.EstimateOffsetY * DpiScale }, StringAlignment.Far);
 
         if (_lastChargeText is null)

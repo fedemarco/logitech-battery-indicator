@@ -381,7 +381,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         if (historyShown)
             _overlay.ShowHistory(_history);
-        _overlay.SetStatus(devices.Tray.Status, devices.Headline, _drainPercentPerDay);
+        _overlay.SetStatus(devices.Tray.Status, devices.TrayName, devices.StatusLine, _drainPercentPerDay);
     }
 
     private void UpdateIcon(BatteryStatus? status)
@@ -434,7 +434,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         var overlay = new OverlayForm(_history, _isSimulator);
         if (_devices is { } devices)
-            overlay.SetStatus(devices.Tray.Status, devices.Headline, _drainPercentPerDay);
+            overlay.SetStatus(devices.Tray.Status, devices.TrayName, devices.StatusLine, _drainPercentPerDay);
         overlay.FormClosed += (_, _) =>
         {
             _overlay = null;
