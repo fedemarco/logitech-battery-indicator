@@ -111,19 +111,35 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private ToolStripMenuItem BuildSimulatorMenu(MockBatteryProvider mock)
     {
         var simulator = new ToolStripMenuItem("Simulator");
+        var modeItems = new List<ToolStripMenuItem>();
         foreach (var (label, mode) in SimulatorItems)
         {
             var item = new ToolStripMenuItem(label) { Checked = mock.Mode == mode, Tag = mode };
             item.Click += (_, _) =>
             {
                 mock.Mode = mode;
-                foreach (ToolStripMenuItem other in simulator.DropDownItems)
+                foreach (var other in modeItems)
                     other.Checked = (MockMode)other.Tag! == mode;
                 _ = RefreshAsync();
             };
+            modeItems.Add(item);
             simulator.DropDownItems.Add(item);
         }
+        simulator.DropDownItems.Add(new ToolStripSeparator());
+        simulator.DropDownItems.Add(BuildSeveralDevicesItem(mock));
         return simulator;
+    }
+
+    private ToolStripMenuItem BuildSeveralDevicesItem(MockBatteryProvider mock)
+    {
+        var item = new ToolStripMenuItem("Several devices") { Checked = mock.SeveralDevices };
+        item.Click += (_, _) =>
+        {
+            mock.SeveralDevices = !mock.SeveralDevices;
+            item.Checked = mock.SeveralDevices;
+            _ = RefreshAsync();
+        };
+        return item;
     }
 
     private static ToolStripMenuItem BuildStartupItem()

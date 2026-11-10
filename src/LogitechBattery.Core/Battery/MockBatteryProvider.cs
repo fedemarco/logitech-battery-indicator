@@ -31,7 +31,11 @@ public sealed class MockBatteryProvider : IBatteryProvider
     // 100 % is reported as Full, so charging never shows it.
     private const int HighestChargingPercent = BatteryStatus.FullPercent - 1;
 
-    private static readonly DeviceInfo MockDevice = new(DeviceId.Parse("00000001"), "Mock mouse");
+    private const int KeyboardPercent = 60;
+
+    private static readonly DeviceInfo MockMouse = new(DeviceId.Parse("00000001"), "Mock mouse");
+    private static readonly DeviceInfo MockKeyboard = new(DeviceId.Parse("00000002"), "Mock keyboard");
+    private static readonly DeviceInfo MockHeadset = new(DeviceId.Parse("00000003"), "Mock headset");
 
     private readonly TimeProvider _time;
     private MockMode _mode = MockMode.Auto;
@@ -54,9 +58,24 @@ public sealed class MockBatteryProvider : IBatteryProvider
         }
     }
 
+    /// <summary>When on, a keyboard and a headset join the mouse, to try the multi-device UI.</summary>
+    public bool SeveralDevices { get; set; }
+
     public Task<IReadOnlyList<DeviceReading>> ReadAsync(CancellationToken cancellationToken = default)
     {
-        var (connection, percent, charging) = _mode switch
+        var now = _time.GetUtcNow();
+        var readings = new List<DeviceReading> { new(MockMouse, MouseStatus(now)) };
+        if (SeveralDevices)
+        {
+            readings.Add(new DeviceReading(MockKeyboard, ToStatus(Connected(KeyboardPercent, ChargingState.Discharging), now)));
+            readings.Add(new DeviceReading(MockHeadset, ToStatus(NoReading(ConnectionState.Asleep), now)));
+        }
+        return Task.FromResult<IReadOnlyList<DeviceReading>>(readings);
+    }
+
+    private BatteryStatus MouseStatus(DateTimeOffset now)
+    {
+        var reading = _mode switch
         {
             MockMode.Auto => AutoReading(),
             MockMode.Discharging85 => Connected(85, ChargingState.Discharging),
@@ -67,9 +86,11 @@ public sealed class MockBatteryProvider : IBatteryProvider
             MockMode.Asleep => NoReading(ConnectionState.Asleep),
             _ => NoReading(ConnectionState.NotFound),
         };
-        var status = new BatteryStatus(connection, percent, charging, _time.GetUtcNow());
-        return Task.FromResult<IReadOnlyList<DeviceReading>>([new DeviceReading(MockDevice, status)]);
+        return ToStatus(reading, now);
     }
+
+    private static BatteryStatus ToStatus(Reading reading, DateTimeOffset now) =>
+        new(reading.Connection, reading.Percent, reading.Charging, now);
 
     private Reading AutoReading()
     {

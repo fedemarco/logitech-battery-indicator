@@ -83,4 +83,40 @@ public class MockBatteryProviderTests
 
         Assert.Equal((connection, percent, charging), (status.Connection, status.Percent, status.Charging));
     }
+
+    private static IReadOnlyList<DeviceReading> ReadAll(MockBatteryProvider provider) => provider.ReadAsync().Result;
+
+    [Fact]
+    public void Reports_only_the_mouse_by_default()
+    {
+        var readings = ReadAll(new MockBatteryProvider(new FakeTime()));
+
+        Assert.Equal(["Mock mouse"], readings.Select(reading => reading.Device.Name));
+    }
+
+    [Fact]
+    public void Several_devices_adds_a_connected_keyboard_and_an_asleep_headset_after_the_mouse()
+    {
+        var provider = new MockBatteryProvider(new FakeTime()) { SeveralDevices = true };
+
+        var readings = ReadAll(provider);
+
+        Assert.Equal(
+            [("00000001", "Mock mouse"), ("00000002", "Mock keyboard"), ("00000003", "Mock headset")],
+            readings.Select(reading => (reading.Device.Id.ToString(), reading.Device.Name)));
+        var keyboard = readings[1].Status!;
+        Assert.Equal((ConnectionState.Connected, 60, ChargingState.Discharging), (keyboard.Connection, keyboard.Percent, keyboard.Charging));
+        var headset = readings[2].Status!;
+        Assert.Equal((ConnectionState.Asleep, (int?)null, ChargingState.Unknown), (headset.Connection, headset.Percent, headset.Charging));
+    }
+
+    [Fact]
+    public void Mouse_still_follows_the_mode_when_several_devices_are_on()
+    {
+        var provider = new MockBatteryProvider(new FakeTime()) { SeveralDevices = true, Mode = MockMode.Full100 };
+
+        var mouse = ReadAll(provider)[0].Status!;
+
+        Assert.Equal((ConnectionState.Connected, 100, ChargingState.Full), (mouse.Connection, mouse.Percent, mouse.Charging));
+    }
 }
