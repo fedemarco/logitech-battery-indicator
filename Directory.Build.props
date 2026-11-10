@@ -6,7 +6,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <DebugType>embedded</DebugType>
     <!-- The upcoming release; every assembly carries it (the probe reports Core's, the tooltip the App's). -->
-    <VersionPrefix>0.6.0</VersionPrefix>
+    <VersionPrefix>0.7.0</VersionPrefix>
   </PropertyGroup>
 
 </Project>
