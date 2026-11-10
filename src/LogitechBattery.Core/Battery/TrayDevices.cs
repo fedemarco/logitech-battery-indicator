@@ -3,11 +3,14 @@ namespace LogitechBattery.Battery;
 /// <summary>One entry of the "Show in tray" menu.</summary>
 public sealed record TrayDeviceItem(DeviceId Id, string Text, bool IsTray);
 
+/// <summary>A device shown next to the tray device, in the tooltip.</summary>
+public sealed record OtherDevice(string Name, BatteryStatus? Status);
+
 /// <summary>What the tray shows after a round of readings: the chosen device, the other devices and the menu entries to choose from.</summary>
 public sealed record TrayDevices(
     DeviceReading Tray,
     string TrayName,
-    IReadOnlyList<(string Name, BatteryStatus? Status)> Others,
+    IReadOnlyList<OtherDevice> Others,
     IReadOnlyList<TrayDeviceItem> Items)
 {
     private const string ReadFailedText = "Battery read failed";
@@ -28,11 +31,8 @@ public sealed record TrayDevices(
         return new TrayDevices(
             tray,
             names.GetValueOrDefault(tray.Device.Id, tray.Device.Name),
-            listed.Where(reading => reading.Device.Id != tray.Device.Id).Select(reading => (names[reading.Device.Id], reading.Status)).ToList(),
-            listed.Select(reading => new TrayDeviceItem(
-                reading.Device.Id,
-                $"{names[reading.Device.Id]}{TextSeparator}{MenuStatusText(reading.Status)}",
-                reading.Device.Id == tray.Device.Id)).ToList());
+            OthersOf(listed, tray, names),
+            MenuItemsOf(listed, tray, names));
     }
 
     // The placeholder is not a device; a saved device that was not read is listed so the user can see it and switch away from it.
@@ -45,10 +45,18 @@ public sealed record TrayDevices(
         return listed;
     }
 
-    private static string MenuStatusText(BatteryStatus? status) => status switch
+    private static List<OtherDevice> OthersOf(List<DeviceReading> listed, DeviceReading tray, IReadOnlyDictionary<DeviceId, string> names) =>
+        listed
+            .Where(reading => reading.Device.Id != tray.Device.Id)
+            .Select(reading => new OtherDevice(names[reading.Device.Id], reading.Status))
+            .ToList();
+
+    private static List<TrayDeviceItem> MenuItemsOf(List<DeviceReading> listed, DeviceReading tray, IReadOnlyDictionary<DeviceId, string> names) =>
+        listed.Select(reading => MenuItemOf(reading, tray, names)).ToList();
+
+    private static TrayDeviceItem MenuItemOf(DeviceReading reading, DeviceReading tray, IReadOnlyDictionary<DeviceId, string> names)
     {
-        null => "read failed",
-        { Connection: ConnectionState.Connected, Percent: { } percent } => $"{percent}%",
-        _ => status.ToDisplayString().ToLowerInvariant(),
-    };
+        var statusText = BatteryStatusText.Short(reading.Status).ToLowerInvariant(); // lower case after the name: "G915 · read failed"
+        return new TrayDeviceItem(reading.Device.Id, $"{names[reading.Device.Id]}{TextSeparator}{statusText}", reading.Device.Id == tray.Device.Id);
+    }
 }

@@ -15,7 +15,7 @@ public static class TrayTooltip
         string deviceName,
         string? statusLine,
         string? remainingText,
-        IReadOnlyList<(string Name, BatteryStatus? Status)> otherDevices,
+        IReadOnlyList<OtherDevice> otherDevices,
         string displayVersion)
     {
         var lines = new[]
@@ -29,16 +29,8 @@ public static class TrayTooltip
         return text.Length > MaxLength ? text[..MaxLength] : text;
     }
 
-    private static string? OtherDevicesLine(IReadOnlyList<(string Name, BatteryStatus? Status)> otherDevices) =>
+    private static string? OtherDevicesLine(IReadOnlyList<OtherDevice> otherDevices) =>
         otherDevices.Count == 0
             ? null
-            : string.Join(OtherDevicesSeparator, otherDevices.Select(device => $"{device.Name}: {ShortStatus(device.Status)}"));
-
-    private static string ShortStatus(BatteryStatus? status) => status switch
-    {
-        null => "Read failed",
-        { Connection: ConnectionState.Connected, Percent: { } percent } => $"{percent}%",
-        { Connection: ConnectionState.Connected } => "Battery unknown",
-        _ => status.ToDisplayString(),
-    };
+            : string.Join(OtherDevicesSeparator, otherDevices.Select(device => $"{device.Name}: {BatteryStatusText.Short(device.Status)}"));
 }

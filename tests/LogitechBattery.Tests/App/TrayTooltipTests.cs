@@ -5,12 +5,12 @@ namespace LogitechBattery.Tests;
 public class TrayTooltipTests
 {
     private const string Version = "0.5.0";
-    private static readonly IReadOnlyList<(string Name, BatteryStatus? Status)> NoOtherDevices = [];
+    private static readonly IReadOnlyList<OtherDevice> NoOtherDevices = [];
 
-    private static (string Name, BatteryStatus? Status) Other(string name, int percent) => (name, TestData.Status(percent));
+    private static OtherDevice Other(string name, int percent) => new(name, TestData.Status(percent));
 
-    private static (string Name, BatteryStatus? Status) Other(string name, ConnectionState connection) =>
-        (name, TestData.Status(null, ChargingState.Unknown, connection));
+    private static OtherDevice Other(string name, ConnectionState connection) =>
+        new(name, TestData.Status(null, ChargingState.Unknown, connection));
 
     [Fact]
     public void The_tooltip_has_device_status_estimate_and_app_name_on_separate_lines() =>
@@ -38,7 +38,7 @@ public class TrayTooltipTests
             "PRO X2: 85%\n96 h left\nG915: 40% · M720: Asleep · K380: Not found · MX Keys: Read failed\nLogitech Battery 0.5.0",
             TrayTooltip.Build(
                 "PRO X2", "85%", "96 h left",
-                [Other("G915", 40), Other("M720", ConnectionState.Asleep), Other("K380", ConnectionState.NotFound), ("MX Keys", null)],
+                [Other("G915", 40), Other("M720", ConnectionState.Asleep), Other("K380", ConnectionState.NotFound), new OtherDevice("MX Keys", null)],
                 Version));
 
     [Fact]

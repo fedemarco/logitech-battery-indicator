@@ -6,9 +6,6 @@ namespace LogitechBattery.Battery;
 /// </summary>
 public sealed class DeviceHistories(string dataDirectory)
 {
-    /// <summary>Earlier versions supported only this mouse, so the old single file holds its readings.</summary>
-    internal const string LegacyDeviceName = "PRO X2 SUPERSTRIKE";
-
     private const string FolderName = "history";
     private const string LegacyFileName = "history.csv";
     private const string FileExtension = ".csv";
@@ -30,7 +27,7 @@ public sealed class DeviceHistories(string dataDirectory)
         if (_histories.TryGetValue(device.Id, out var known))
             return known;
 
-        if (device.Name == LegacyDeviceName && File.Exists(LegacyPath))
+        if (device.Name == DeviceInfo.ProX2SuperstrikeName && File.Exists(LegacyPath))
             MigrateLegacyFile(PathOf(device.Id));
 
         var history = new BatteryHistory(PathOf(device.Id));
@@ -42,8 +39,13 @@ public sealed class DeviceHistories(string dataDirectory)
     /// <summary>Returns true when no history file is left; the folder stays.</summary>
     public bool ClearAll()
     {
-        var cleared = _histories.Values.Select(history => history.Clear()).ToList().All(done => done);
-        return DeleteUnknownFiles() && cleared;
+        var allCleared = true;
+        foreach (var history in _histories.Values)
+        {
+            if (!history.Clear())
+                allCleared = false;
+        }
+        return DeleteUnknownFiles() && allCleared;
     }
 
     private bool DeleteUnknownFiles()

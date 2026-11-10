@@ -33,7 +33,7 @@ public class TrayDevicesTests
         var devices = Build([Mouse(TestData.Status(85)), Keyboard(keyboardStatus)]);
 
         Assert.Equal("PRO X2", devices.TrayName);
-        Assert.Equal([("G915", (BatteryStatus?)keyboardStatus)], devices.Others);
+        Assert.Equal([new OtherDevice("G915", keyboardStatus)], devices.Others);
     }
 
     [Fact]

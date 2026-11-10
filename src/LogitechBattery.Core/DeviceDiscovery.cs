@@ -28,8 +28,6 @@ internal static class DeviceDiscovery
     /// <summary>How long a quick one-shot request (discovery, receiver flags) may wait for its answer; a sleeping device does not answer.</summary>
     public static readonly TimeSpan Timeout = TimeSpan.FromMilliseconds(500);
 
-    private const string UnnamedDeviceName = "Logitech device";
-
     private enum LookupOutcome { Unanswered, NotSupported, Found }
 
     /// <summary>
@@ -57,11 +55,11 @@ internal static class DeviceDiscovery
 
         var name = ReadName(channel, deviceIndex, cancellationToken);
         if (battery.Outcome == LookupOutcome.NotSupported)
-            return new SlotProbe.NoUnifiedBattery(name.IsFound ? name.Value! : UnnamedDeviceName);
+            return new SlotProbe.NoUnifiedBattery(name.IsFound ? name.Value! : DeviceInfo.UnnamedDeviceName);
         if (name.Outcome == LookupOutcome.Unanswered)
             return SlotProbe.NoDevice;
 
-        var deviceName = name.IsFound ? name.Value! : UnnamedDeviceName;
+        var deviceName = name.IsFound ? name.Value! : DeviceInfo.UnnamedDeviceName;
         var id = ReadId(channel, deviceIndex, cancellationToken);
         if (id.Outcome == LookupOutcome.Unanswered)
             return SlotProbe.NoDevice;

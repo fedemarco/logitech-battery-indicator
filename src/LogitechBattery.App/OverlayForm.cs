@@ -21,16 +21,19 @@ internal sealed class OverlayForm : Form
         public const int StatusTop = NameTop + NameHeight;
         public const int StatusHeight = 24;
         public const int EstimateOffsetY = 3; // the smaller estimate text sits lower to share the status baseline
-        public const int LastChargeTop = StatusTop + 26;
+        public const int StatusToLastChargeGap = 26; // from the top of the status line to the top of the last-charge line
+        public const int LastChargeTop = StatusTop + StatusToLastChargeGap;
         public const int LastChargeHeight = 18;
 
-        public const int ToggleTop = LastChargeTop + 26;
+        public const int LastChargeToToggleGap = 26;
+        public const int ToggleTop = LastChargeTop + LastChargeToToggleGap;
         public const int ToggleWidth = 48;
         public const int ToggleHeight = 24;
         public const int ToggleGap = 6;
 
         public const int PlotLeft = 44; // room for the percent labels
-        public const int PlotTop = ToggleTop + 38;
+        public const int ToggleToPlotGap = 38; // from the top of the range buttons to the top of the plot
+        public const int PlotTop = ToggleTop + ToggleToPlotGap;
         public const int PlotHeight = 126;
         public const int PlotRightMargin = 14;
         public const int PlotBottomMargin = 34; // room for the time labels

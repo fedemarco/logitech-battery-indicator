@@ -6,25 +6,33 @@ public static class DeviceNames
     public const int MaxLength = 32;
 
     private const int IdSuffixLength = 4;
-    private const string UnnamedDevice = "Logitech device";
 
     public static IReadOnlyDictionary<DeviceId, string> Display(IReadOnlyList<DeviceInfo> devices)
     {
-        var shortNames = devices.ToDictionary(device => device.Id, device => ShortName(device.Name));
-        var nameCounts = shortNames.Values.Where(name => name.Length > 0).GroupBy(name => name).ToDictionary(group => group.Key, group => group.Count());
+        var shortNames = devices.ToDictionary(device => device.Id, device => Clean(device.Name, MaxLength));
+        var nameCounts = shortNames.Values.GroupBy(name => name).ToDictionary(group => group.Key, group => group.Count());
 
         return shortNames.ToDictionary(
             entry => entry.Key,
-            entry => entry.Value.Length == 0 ? $"{UnnamedDevice} ({IdSuffix(entry.Key)})"
-                : nameCounts[entry.Value] > 1 ? $"{entry.Value} ({IdSuffix(entry.Key)})"
-                : entry.Value);
+            entry => DisplayNameOf(entry.Key, entry.Value, nameCounts[entry.Value]));
     }
 
-    // The device sends the name; control characters (a stray NUL, a newline) must not reach the tooltip or a notification.
-    private static string ShortName(string name)
+    /// <summary>The device sends the name; control characters (a stray NUL, a newline) must not reach the tooltip, a notification or a settings line.</summary>
+    internal static string Clean(string name, int maxLength)
     {
-        var printable = new string(name.Where(character => !char.IsControl(character)).ToArray()).Trim();
-        return printable.Length > MaxLength ? printable[..MaxLength] : printable;
+        var withoutControls = new string(name.Where(character => !char.IsControl(character)).ToArray()).Trim();
+        var cut = withoutControls.Length <= maxLength ? withoutControls : withoutControls[..maxLength];
+        // A cut inside a surrogate pair would leave an invalid character.
+        return cut.Length > 0 && char.IsHighSurrogate(cut[^1]) ? cut[..^1] : cut;
+    }
+
+    private static string DisplayNameOf(DeviceId id, string shortName, int sameNameCount)
+    {
+        if (shortName.Length == 0)
+            return $"{DeviceInfo.UnnamedDeviceName} ({IdSuffix(id)})";
+        if (sameNameCount > 1)
+            return $"{shortName} ({IdSuffix(id)})";
+        return shortName;
     }
 
     private static string IdSuffix(DeviceId id)

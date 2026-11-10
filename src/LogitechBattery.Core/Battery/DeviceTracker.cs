@@ -20,29 +20,35 @@ public sealed class DeviceTracker(IReadOnlyDictionary<DeviceId, string> savedNam
         var alerts = new List<DeviceAlert>();
         foreach (var (device, status) in realReadings)
         {
-            if (status is null)
-                continue;
-            if (!_alertsByDevice.TryGetValue(device.Id, out var deviceAlerts))
-                _alertsByDevice[device.Id] = deviceAlerts = new BatteryAlerts();
-            if (deviceAlerts.Update(status, settings) is { } alert)
+            if (status is not null && AlertsOf(device).Update(status, settings) is { } alert)
                 alerts.Add(new DeviceAlert(displayNames[device.Id], alert, status.Percent));
         }
 
         return new DeviceTrackerUpdate(alerts, RememberNames(realReadings));
     }
 
+    private BatteryAlerts AlertsOf(DeviceInfo device)
+    {
+        if (!_alertsByDevice.TryGetValue(device.Id, out var deviceAlerts))
+            _alertsByDevice[device.Id] = deviceAlerts = new BatteryAlerts();
+        return deviceAlerts;
+    }
+
     private IReadOnlyDictionary<DeviceId, string>? RememberNames(List<DeviceReading> realReadings)
     {
         var changed = false;
         foreach (var (device, _) in realReadings)
-        {
-            // The settings file saves the cleaned name, so compare that form or the name would be saved again at every start.
-            var cleanName = SettingsFile.CleanName(device.Name);
-            if (_knownNames.TryGetValue(device.Id, out var knownName) && knownName == cleanName)
-                continue;
-            _knownNames[device.Id] = cleanName;
-            changed = true;
-        }
+            changed |= RememberName(device);
         return changed ? new Dictionary<DeviceId, string>(_knownNames) : null;
+    }
+
+    // The settings file saves the cleaned name, so compare that form or the name would be saved again at every start.
+    private bool RememberName(DeviceInfo device)
+    {
+        var cleanName = SettingsFile.CleanName(device.Name);
+        if (_knownNames.TryGetValue(device.Id, out var knownName) && knownName == cleanName)
+            return false;
+        _knownNames[device.Id] = cleanName;
+        return true;
     }
 }

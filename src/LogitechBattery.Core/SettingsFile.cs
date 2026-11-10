@@ -140,13 +140,7 @@ public sealed class SettingsFile(string path)
     }
 
     /// <summary>A name must never add a line or break the format: no control characters (CR and LF included), at most 64 characters.</summary>
-    internal static string CleanName(string name)
-    {
-        var withoutControls = new string(name.Where(character => !char.IsControl(character)).ToArray()).Trim();
-        var cut = withoutControls.Length <= MaxNameCharacters ? withoutControls : withoutControls[..MaxNameCharacters];
-        // A cut inside a surrogate pair would write an invalid character.
-        return cut.Length > 0 && char.IsHighSurrogate(cut[^1]) ? cut[..^1] : cut;
-    }
+    internal static string CleanName(string name) => DeviceNames.Clean(name, MaxNameCharacters);
 
     internal static ParsedSettings Parse(IEnumerable<string> lines)
     {

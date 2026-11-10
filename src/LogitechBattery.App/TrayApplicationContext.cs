@@ -213,7 +213,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             if (_settingsFile.Save(_settings) is { } problem)
                 ShowWarning(problem);
         }
-        ShowTrayDevice(historyChanged: false); // the last readings are enough, no new read
+        ShowTrayDevice(CurrentDevices(), trayHistoryGotLine: false); // the last readings are enough, no new read
     }
 
     private void SaveDeviceNames(IReadOnlyDictionary<DeviceId, string> names)
@@ -323,7 +323,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return (true, null);
 
         _readings = readings;
-        ShowTrayDevice(historyChanged: RecordReadings(CurrentDevices().Tray.Device));
+        var devices = CurrentDevices();
+        var trayHistoryGotLine = RecordReadings(devices.Tray.Device);
+        ShowTrayDevice(devices, trayHistoryGotLine);
         NotifyAlerts();
         return (true, _devices?.Tray.Status);
     }
@@ -340,36 +342,43 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return false;
 
         var now = DateTimeOffset.UtcNow;
-        var changed = false;
+        var trayHistoryGotLine = false;
         foreach (var (device, status) in _readings)
         {
             if (status is null || device.Id == DeviceInfo.NoDeviceYet.Id)
                 continue;
             var wrote = _histories.For(device, now).Record(status);
-            changed |= wrote && device.Id == trayDevice.Id;
+            var isTrayDevice = device.Id == trayDevice.Id;
+            if (wrote && isTrayDevice)
+                trayHistoryGotLine = true;
         }
-        return changed;
+        return trayHistoryGotLine;
     }
 
     // The tray device's history is null in the simulator and while no device is known.
-    private bool UseHistoryOf(DeviceInfo trayDevice)
+    private BatteryHistory? HistoryOf(DeviceInfo trayDevice)
     {
-        var history = _histories is null || trayDevice.Id == DeviceInfo.NoDeviceYet.Id
-            ? null
-            : _histories.For(trayDevice, DateTimeOffset.UtcNow);
-        var switched = history != _history;
-        _history = history;
-        return switched;
+        if (_histories is null || trayDevice.Id == DeviceInfo.NoDeviceYet.Id)
+            return null;
+        return _histories.For(trayDevice, DateTimeOffset.UtcNow);
+    }
+
+    // Returns true when the history in use is another one than before.
+    private bool SwitchHistoryTo(DeviceInfo trayDevice)
+    {
+        var newHistory = HistoryOf(trayDevice);
+        var isAnotherHistory = newHistory != _history;
+        _history = newHistory;
+        return isAnotherHistory;
     }
 
     // Everything that follows the tray device: history, drain rate, overlay, tooltip, icon and menu.
-    private void ShowTrayDevice(bool historyChanged)
+    private void ShowTrayDevice(TrayDevices devices, bool trayHistoryGotLine)
     {
         try
         {
-            var devices = CurrentDevices();
             _devices = devices;
-            var historyShown = UseHistoryOf(devices.Tray.Device) || historyChanged;
+            var historyShown = SwitchHistoryTo(devices.Tray.Device) || trayHistoryGotLine;
             if (historyShown)
                 RecomputeDrainRate();
             _showInTrayMenu?.Update(devices.Items);

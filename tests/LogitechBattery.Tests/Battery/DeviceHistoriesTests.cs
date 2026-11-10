@@ -5,7 +5,7 @@ namespace LogitechBattery.Tests;
 public sealed class DeviceHistoriesTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 6, 12, 0, 0, TimeSpan.Zero);
-    private static readonly DeviceInfo Mouse = new(DeviceId.Parse("62C31634"), DeviceHistories.LegacyDeviceName);
+    private static readonly DeviceInfo Mouse = new(DeviceId.Parse("62C31634"), DeviceInfo.ProX2SuperstrikeName);
     private static readonly DeviceInfo Keyboard = new(DeviceId.Parse("A1B2C3D4"), "MX Keys");
 
     private const string Early = "2026-11-05T08:00:00Z,80,Discharging,Connected";
@@ -77,7 +77,7 @@ public sealed class DeviceHistoriesTests : IDisposable
     public void The_old_file_goes_to_the_first_device_with_the_mouse_name_only()
     {
         WriteLegacy(Early);
-        var secondMouse = new DeviceInfo(DeviceId.Parse("0BADC0DE"), DeviceHistories.LegacyDeviceName);
+        var secondMouse = new DeviceInfo(DeviceId.Parse("0BADC0DE"), DeviceInfo.ProX2SuperstrikeName);
         var histories = NewSession();
 
         histories.For(Mouse, Now);
