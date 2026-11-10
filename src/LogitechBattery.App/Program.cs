@@ -37,8 +37,8 @@ internal static class Program
         {
             var settingsFile = new SettingsFile(Path.Combine(AppPaths.DataDirectory, "settings.ini"));
             return useMock
-                ? new TrayApplicationContext(new MockBatteryProvider(), history: null, settingsFile) // simulated readings must never reach the real history file
-                : new TrayApplicationContext(new HidPpBatteryProvider(), OpenHistory(), settingsFile);
+                ? new TrayApplicationContext(new MockBatteryProvider(), histories: null, settingsFile) // simulated readings must never reach the real history files
+                : new TrayApplicationContext(new HidPpBatteryProvider(), new DeviceHistories(AppPaths.DataDirectory), settingsFile);
         }
         catch (Exception ex)
         {
@@ -64,13 +64,6 @@ internal static class Program
             return true;
         }
         return false;
-    }
-
-    private static BatteryHistory OpenHistory()
-    {
-        var history = new BatteryHistory(Path.Combine(AppPaths.DataDirectory, "history.csv"));
-        history.PruneOlderThan(BatteryHistory.Retention, DateTimeOffset.Now);
-        return history;
     }
 
     private static void OpenInNotepad(string file) =>

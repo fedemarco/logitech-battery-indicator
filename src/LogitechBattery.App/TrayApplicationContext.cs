@@ -27,7 +27,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private readonly string _displayVersion = AppVersion.Display(AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()));
     private readonly IBatteryProvider _provider;
-    private readonly BatteryHistory? _history;
+    private readonly DeviceHistories? _histories;
+    private BatteryHistory? _history; // of the first device: the drain rate, the overlay and the tooltip follow it
     private readonly SettingsFile _settingsFile;
     private AlertSettings _settings;
     private readonly BatteryAlerts _alerts = new();
@@ -50,10 +51,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private bool _refreshing;
     private bool _exited;
 
-    public TrayApplicationContext(IBatteryProvider provider, BatteryHistory? history, SettingsFile settingsFile)
+    public TrayApplicationContext(IBatteryProvider provider, DeviceHistories? histories, SettingsFile settingsFile)
     {
         _provider = provider;
-        _history = history;
+        _histories = histories;
         _settingsFile = settingsFile;
         _settings = settingsFile.Load();
         if (SynchronizationContext.Current is WindowsFormsSynchronizationContext ui)
@@ -73,7 +74,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _notifyIcon.MouseClick += OnTrayClick;
 
-        RecomputeDrainRate();
         _timer = StartPollTimer(isSimulator ? MockPollIntervalMs : PollIntervalMs);
         _followUp.Tick += OnFollowUpTickAsync;
         if (provider is HidPpBatteryProvider hid)
@@ -101,8 +101,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
             var startItem = BuildStartupItem();
             menu.Opening += (_, _) => startItem.Checked = AutoStart.IsEnabled();
             menu.Items.Add(startItem);
-            if (_history is not null)
-                menu.Items.Add(BuildClearHistoryItem(_history));
+            if (_histories is not null)
+                menu.Items.Add(BuildClearHistoryItem(_histories));
         }
         menu.Items.Add("Exit", null, (_, _) => ExitApp());
         return menu;
@@ -162,7 +162,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             ShowWarning("Couldn't turn on Start with Windows. The reason is in log.txt.");
     }
 
-    private ToolStripMenuItem BuildClearHistoryItem(BatteryHistory history)
+    private ToolStripMenuItem BuildClearHistoryItem(DeviceHistories histories)
     {
         var clearItem = new ToolStripMenuItem("Clear history…");
         clearItem.Click += (_, _) =>
@@ -176,14 +176,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
             if (answer != DialogResult.Yes)
                 return;
 
-            var cleared = history.Clear();
+            var cleared = histories.ClearAll();
             if (cleared)
             {
                 _drainPercentPerDay = null;
                 RefreshTooltip();
             }
             else
-                ShowWarning("Couldn't delete the battery history. Close any program that has history.csv open and try again.");
+                ShowWarning("Couldn't delete the battery history. Close any program that has a history file open and try again.");
         };
         return clearItem;
     }
@@ -284,7 +284,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             var readings = await _provider.ReadAsync();
             status = readings[0].Status ?? throw new InvalidOperationException("The device reading failed.");
             statusLine = status.ToDisplayString();
-            if (_history?.Record(status) == true)
+            if (RecordReadings(readings))
             {
                 RecomputeDrainRate();
                 if (!_exited)
@@ -305,6 +305,27 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (!_exited) // the tray icon is gone if the app exited during the read
             UpdateTray(status, statusLine);
         return (true, status);
+    }
+
+    // Returns true when the first device's history changed: a new line, or it is the first read of this session.
+    private bool RecordReadings(IReadOnlyList<DeviceReading> readings)
+    {
+        if (_histories is null)
+            return false;
+
+        var now = DateTimeOffset.UtcNow;
+        var firstDevice = readings[0].Device;
+        var firstHistory = _histories.For(firstDevice, now);
+        var changed = firstHistory != _history;
+        _history = firstHistory;
+        foreach (var (device, status) in readings)
+        {
+            if (status is null)
+                continue;
+            var wrote = _histories.For(device, now).Record(status);
+            changed |= wrote && device == firstDevice;
+        }
+        return changed;
     }
 
     private void UpdateTray(BatteryStatus? status, string statusLine)

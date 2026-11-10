@@ -57,7 +57,7 @@ No telemetry. The app sends no data to any server and never connects to the inte
 
 - `%LOCALAPPDATA%\LogitechBattery\log.txt` and `log.old.txt` – a small diagnostic log (rotated, at most about 512 KB). Paths under your user folder are shown as `%USERPROFILE%`.
 - `%LOCALAPPDATA%\LogitechBattery\probe.txt` and `listen.txt` – the reports of `--probe` and `--listen`, only when you run those options.
-- `%LOCALAPPDATA%\LogitechBattery\history.csv` – the battery history behind the graph and the time-left estimate (kept for one year; **Clear history…** deletes it).
+- `%LOCALAPPDATA%\LogitechBattery\history\` – the battery history behind the graph and the time-left estimate, one CSV file per device (kept for one year; **Clear history…** deletes them).
 - `%LOCALAPPDATA%\LogitechBattery\settings.ini` – your notification settings, written only when you change one. The app reads it at startup, so exit the app before you edit it by hand.
 - `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` – the "Start with Windows" entry, only while that option is on.
 - `HKCU\Software\LogitechBattery` – remembers that the first-run "Start with Windows" default was applied.
