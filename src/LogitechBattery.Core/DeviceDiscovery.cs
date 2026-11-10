@@ -70,24 +70,27 @@ internal static class DeviceDiscovery
         return new SlotProbe.Found(new BatteryTarget(channel, deviceIndex, battery.Value, device));
     }
 
-    /// <summary>The unit ID (feature 0x0003); the route fallback only if the device has no such feature.</summary>
+    /// <summary>
+    /// The unit ID (feature 0x0003). The route fallback when the device has no such feature, answers with an error,
+    /// or reports an invalid ID: those answers do not change on the next read. Only a missing answer is retried.
+    /// </summary>
     private static Lookup<DeviceId> ReadId(HidPpChannel channel, byte deviceIndex, CancellationToken cancellationToken)
     {
+        var routeFallback = Lookup<DeviceId>.Of(DeviceId.FromRoute(channel.ProductId, deviceIndex));
         var feature = FindFeatureIndex(channel, deviceIndex, DeviceInformation.FeatureId, cancellationToken);
         if (feature.Outcome == LookupOutcome.NotSupported)
-        {
-            return Lookup<DeviceId>.Of(DeviceId.FromRoute(channel.ProductId, deviceIndex));
-        }
+            return routeFallback;
         if (!feature.IsFound)
             return feature.WithoutValue<DeviceId>();
 
         var request = HidPpMessage.BuildRequest(deviceIndex, feature.Value, DeviceInformation.GetDeviceInfoFunction, HidPpMessage.SoftwareId);
-        if (RequestDuringDiscovery(channel, request, cancellationToken) is not { } response)
-            return new Lookup<DeviceId>(LookupOutcome.Unanswered);
+        var answer = channel.Exchange(request, Timeout, cancellationToken);
+        if (answer.Response is not { } response)
+            return answer.ErrorCode is null ? new Lookup<DeviceId>(LookupOutcome.Unanswered) : routeFallback;
 
         return DeviceId.TryParse(DeviceInformation.UnitIdOf(HidPpMessage.ParamsOf(response)), out var unitId)
             ? Lookup<DeviceId>.Of(unitId)
-            : new Lookup<DeviceId>(LookupOutcome.Unanswered);
+            : routeFallback;
     }
 
     /// <summary>Asks the root feature for the index of <paramref name="featureId"/>.</summary>
