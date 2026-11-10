@@ -9,6 +9,7 @@ namespace LogitechBattery.Battery;
 /// </summary>
 public sealed partial record DeviceId
 {
+    private const char RouteFallbackPrefix = 'R';
     private const string AllZeroUnitId = "00000000";
     private const string AllOnesUnitId = "FFFFFFFF";
 
@@ -34,6 +35,9 @@ public sealed partial record DeviceId
         TryParse(text, out var id) ? id : throw new FormatException($"Not a device ID: \"{text}\"");
 
     public static DeviceId FromRoute(int productId, byte deviceIndex) => new($"R{productId:X4}S{deviceIndex:X2}");
+
+    /// <summary>True when the device has no unit ID, so its identity follows the slot it is paired to.</summary>
+    public bool IsRouteFallback => _text[0] == RouteFallbackPrefix;
 
     public override string ToString() => _text;
 }

@@ -42,4 +42,11 @@ public class DeviceIdTests
         Assert.True(DeviceId.TryParse(fallback.ToString(), out var parsed));
         Assert.Equal(fallback, parsed);
     }
+
+    [Fact]
+    public void Only_a_route_id_is_a_route_fallback()
+    {
+        Assert.True(DeviceId.FromRoute(0xC54D, 1).IsRouteFallback);
+        Assert.False(DeviceId.Parse("62C31634").IsRouteFallback);
+    }
 }

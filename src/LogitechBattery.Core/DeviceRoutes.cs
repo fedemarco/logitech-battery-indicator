@@ -9,9 +9,13 @@ namespace LogitechBattery;
 /// </summary>
 internal sealed class DeviceRoutes
 {
+    private enum ChannelPass { NoDeviceAnswered, DeviceAnswered, ChannelFailed }
+
+    private enum SlotState { Empty, Occupied }
+
     private volatile BatteryTarget[] _routes = [];
-    private readonly HashSet<(string ChannelKey, byte DeviceIndex)> _slotsWithoutBattery = [];
-    private readonly HashSet<(string ChannelKey, byte DeviceIndex)> _slotsOfRoutedDevices = [];
+    private readonly HashSet<Slot> _slotsWithoutBattery = [];
+    private readonly HashSet<Slot> _slotsOfRoutedDevices = [];
 
     public KnownDevices Known { get; } = new();
 
@@ -20,13 +24,19 @@ internal sealed class DeviceRoutes
     public bool IsBatteryEventSource(HidPpChannel channel, byte[] report) =>
         _routes.Any(route => route.Channel == channel && HidPpMessage.IsEventFrom(report, route.DeviceIndex, route.FeatureIndex));
 
-    /// <summary>Forgets all routes and skipped slots: the next discovery looks at every slot again.</summary>
+    /// <summary>Forgets all routes, so the next discovery looks at every slot again.</summary>
     public void Clear()
     {
         _routes = [];
-        _slotsWithoutBattery.Clear();
         _slotsOfRoutedDevices.Clear();
     }
+
+    /// <summary>
+    /// Probes slots without Unified Battery again. Called only after a USB change or a resume, not at every rediscovery
+    /// (which a device that cannot be opened triggers at every read), so a skipped slot is logged and probed once per such event.
+    /// shortcut: a different device paired into a skipped slot is missed until the next USB change or resume.
+    /// </summary>
+    public void ForgetSkippedSlots() => _slotsWithoutBattery.Clear();
 
     public void Drop(BatteryTarget route) => KeepRoutes(other => other != route);
 
@@ -44,76 +54,89 @@ internal sealed class DeviceRoutes
         _slotsOfRoutedDevices.Clear();
     }
 
-    /// <summary>Probes every index that has no route yet. Returns the channels that failed (e.g. unplugged) while doing so.</summary>
+    /// <summary>Probes every slot that has no route yet. Returns the channels that failed (e.g. unplugged) while doing so.</summary>
     public IReadOnlyList<HidPpChannel> Discover(IEnumerable<HidPpChannel> channels, CancellationToken cancellationToken)
     {
         var failedChannels = new List<HidPpChannel>();
-        var receiverCandidates = new List<HidPpChannel>();
+        var channelsWithoutDirectDevice = new List<HidPpChannel>();
+
+        // FF is tried on every channel before any receiver slot, so the cable route wins over a receiver route to the same mouse.
         foreach (var channel in channels.Where(channel => !channel.IsClosed))
         {
-            // Over the cable the mouse answers on every index (FF and 01 to 06) with the same data: a device on FF is the only one
-            // on that channel, so the receiver slots are not probed there (they would find the same mouse six times).
-            // FF is tried on every channel before any receiver slot, so the cable route wins over a receiver route to the same mouse.
-            if (!TryDiscover(channel, HidPpMessage.CableDeviceIndexes, cancellationToken, failedChannels) && !failedChannels.Contains(channel))
-                receiverCandidates.Add(channel);
+            switch (DiscoverOn(channel, HidPpMessage.CableDeviceIndexes, cancellationToken))
+            {
+                case ChannelPass.NoDeviceAnswered: channelsWithoutDirectDevice.Add(channel); break;
+                case ChannelPass.ChannelFailed: failedChannels.Add(channel); break;
+            }
         }
-        foreach (var channel in receiverCandidates)
-            TryDiscover(channel, HidPpMessage.ReceiverDeviceIndexes, cancellationToken, failedChannels);
+
+        // Over the cable the mouse answers on every index (FF and 01 to 06) with the same data: a device on FF is the only one
+        // on that channel, so the receiver slots are not probed there (they would find the same mouse six times).
+        foreach (var channel in channelsWithoutDirectDevice)
+        {
+            if (DiscoverOn(channel, HidPpMessage.ReceiverDeviceIndexes, cancellationToken) == ChannelPass.ChannelFailed)
+                failedChannels.Add(channel);
+        }
         return failedChannels;
     }
 
-    /// <summary>True if a device answers on one of the indexes.</summary>
-    private bool TryDiscover(HidPpChannel channel, IEnumerable<byte> deviceIndexes, CancellationToken cancellationToken, List<HidPpChannel> failedChannels)
+    private ChannelPass DiscoverOn(HidPpChannel channel, IEnumerable<byte> deviceIndexes, CancellationToken cancellationToken)
     {
         try
         {
-            var anyDevice = false;
+            var occupiedSlots = 0;
             foreach (var deviceIndex in deviceIndexes)
-                anyDevice |= DiscoverIndex(channel, deviceIndex, cancellationToken);
-            return anyDevice;
+            {
+                if (DiscoverSlot(new Slot(channel.Key, deviceIndex), channel, cancellationToken) == SlotState.Occupied)
+                    occupiedSlots++;
+            }
+            return occupiedSlots > 0 ? ChannelPass.DeviceAnswered : ChannelPass.NoDeviceAnswered;
         }
         catch (Exception ex) when (ex is IOException or TimeoutException)
         {
-            failedChannels.Add(channel);
-            return false;
+            return ChannelPass.ChannelFailed;
         }
     }
 
-    /// <summary>True if a device answers at this index (also when it is routed already or has no Unified Battery).</summary>
-    private bool DiscoverIndex(HidPpChannel channel, byte deviceIndex, CancellationToken cancellationToken)
+    private SlotState DiscoverSlot(Slot slot, HidPpChannel channel, CancellationToken cancellationToken)
     {
-        var slot = (channel.Key, deviceIndex);
-        if (HasRoute(channel, deviceIndex) || _slotsWithoutBattery.Contains(slot) || _slotsOfRoutedDevices.Contains(slot))
-            return true;
+        if (IsAlreadyKnown(slot))
+            return SlotState.Occupied;
 
-        switch (DeviceDiscovery.Probe(channel, deviceIndex, cancellationToken))
+        switch (DeviceDiscovery.Probe(channel, slot.DeviceIndex, cancellationToken))
         {
             case SlotProbe.Found found:
-                Add(found.Target, slot);
-                return true;
+                Add(found.Target);
+                return SlotState.Occupied;
             case SlotProbe.NoUnifiedBattery skipped:
-                // shortcut: a slot without Unified Battery is not probed again until the next rediscovery (USB change, closed channel, resume); a re-pair without one of those is missed until then.
                 _slotsWithoutBattery.Add(slot);
                 AppLog.Write($"Skipping device: {skipped.DeviceName}, no Unified Battery");
-                return true;
+                return SlotState.Occupied;
             default:
-                return false;
+                return SlotState.Empty;
         }
     }
 
-    private bool HasRoute(HidPpChannel channel, byte deviceIndex) =>
-        _routes.Any(route => route.Channel == channel && route.DeviceIndex == deviceIndex);
+    private bool IsAlreadyKnown(Slot slot) =>
+        _routes.Any(route => route.Slot == slot) || _slotsWithoutBattery.Contains(slot) || _slotsOfRoutedDevices.Contains(slot);
 
-    private void Add(BatteryTarget target, (string ChannelKey, byte DeviceIndex) slot)
+    private void Add(BatteryTarget target)
     {
         if (_routes.Any(route => route.Device.Id == target.Device.Id))
         {
-            _slotsOfRoutedDevices.Add(slot); // the same device on a second route: the first one found (the cable) stays
+            _slotsOfRoutedDevices.Add(target.Slot); // the same device on a second route: the first one found (the cable) stays
             return;
         }
 
-        AppLog.Write($"Device found: {target.Device.Name}, PID {target.Channel.ProductId:X4}, devIdx {target.DeviceIndex:X2}, battery feature index {target.FeatureIndex:X2}");
+        if (Known.Seen(target.Device, target.Slot))
+            LogDeviceFound(target);
         _routes = [.. _routes, target];
-        Known.Seen(target.Device, target.Channel.Key);
+    }
+
+    private static void LogDeviceFound(BatteryTarget target)
+    {
+        AppLog.Write($"Device found: {target.Device.Name}, PID {target.Channel.ProductId:X4}, devIdx {target.DeviceIndex:X2}, battery feature index {target.FeatureIndex:X2}");
+        if (target.Device.Id.IsRouteFallback)
+            AppLog.Write($"Device {target.Device.Name} has no unit ID; identity follows the slot");
     }
 }
