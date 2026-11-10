@@ -23,7 +23,7 @@ The tray icon shows the charge at a glance; hover it for the exact percentage. T
 ## Requirements
 
 - Windows, 64-bit.
-- A Logitech PRO X2 SUPERSTRIKE mouse, connected through its Lightspeed receiver or the USB cable. Other Logitech devices are not supported yet.
+- A Logitech PRO X2 SUPERSTRIKE mouse, connected through its Lightspeed receiver or the USB cable. Other Logitech devices that report their battery with HID++ Unified Battery are read too: Lightspeed is tested; Bolt, Unifying and Bluetooth are not tested.
 
 No .NET installation is needed: the app is a single self-contained `.exe` (about 107 MB, because it contains the .NET runtime uncompressed; this keeps the app at about 12 MB of RAM instead of about 50 MB).
 
@@ -45,7 +45,7 @@ What's new: see the [releases](https://github.com/fedemarco/logitech-battery-ind
 |---|---|
 | Hover the tray icon | Status, exact percentage, time left and app version |
 | Left-click the tray icon | Opens the history panel; Esc or a click elsewhere closes it |
-| Right-click the tray icon | Menu: Notifications (low battery level, fully charged), Start with Windows, Clear history…, Exit |
+| Right-click the tray icon | Menu: Show in tray (only with several devices: choose which device the icon shows), Notifications (low battery level, fully charged), Start with Windows, Clear history…, Exit |
 
 Icon colors: green from 40 %, yellow from 20 %, red below 20 %. A separate "unknown" icon means the mouse is asleep, switched off or not found.
 
@@ -71,7 +71,7 @@ No telemetry. The app sends no data to any server and never connects to the inte
 
 ## Troubleshooting
 
-If the tray shows "Mouse not found" while the mouse works, wake it (move it) and wait a few seconds. If it stays that way, these options help to find the cause. Run them from PowerShell in the folder of the exe:
+If the tray shows "Not found" while the mouse works, wake it (move it) and wait a few seconds. If it stays that way, these options help to find the cause. Run them from PowerShell in the folder of the exe:
 
 ```powershell
 .\LogitechBattery.exe --probe    # lists the Logitech devices and what they report (probe.txt)
@@ -87,7 +87,6 @@ Not tested yet: running at the same time as Logitech G HUB or Logi Options+.
 
 ## Roadmap
 
-- More Logitech devices, with a choice of which one the tray shows.
 - Automatic updates.
 
 ## Building from source

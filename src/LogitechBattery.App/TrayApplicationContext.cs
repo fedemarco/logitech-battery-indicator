@@ -28,10 +28,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly string _displayVersion = AppVersion.Display(AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()));
     private readonly IBatteryProvider _provider;
     private readonly DeviceHistories? _histories;
-    private BatteryHistory? _history; // of the first device: the drain rate, the overlay and the tooltip follow it
+    private BatteryHistory? _history; // of the tray device: the drain rate and the overlay follow it
     private readonly SettingsFile _settingsFile;
     private AppSettings _settings;
-    private readonly BatteryAlerts _alerts = new();
+    private readonly DeviceTracker _tracker;
+    private readonly bool _isSimulator;
     private readonly FollowUpSchedule _followUpSchedule = new();
     private readonly StuckReadWatch _stuckReadWatch = new(StuckReadAfter);
 
@@ -43,10 +44,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private Icon? _icon;
     private int _iconSize;
     private TrayIndicator? _indicator;
+    private ShowInTrayMenu? _showInTrayMenu;
     private OverlayForm? _overlay;
     private long? _overlayClosedAtMs;
-    private BatteryStatus? _status;
-    private string _statusLine = "";
+    private IReadOnlyList<DeviceReading> _readings = [];
+    private TrayDevices? _devices; // null until the first read
     private double? _drainPercentPerDay;
     private bool _refreshing;
     private bool _exited;
@@ -57,24 +59,25 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _histories = histories;
         _settingsFile = settingsFile;
         _settings = settingsFile.Load();
+        _tracker = new DeviceTracker(_settings.DeviceNames);
         if (SynchronizationContext.Current is WindowsFormsSynchronizationContext ui)
             _ui = ui; // otherwise captured on the first idle
 
-        var isSimulator = provider is MockBatteryProvider;
-        if (!isSimulator)
+        _isSimulator = provider is MockBatteryProvider;
+        if (!_isSimulator)
             AutoStart.EnableOnFirstRun();
 
         _notifyIcon = new NotifyIcon
         {
             Icon = SystemIcons.Application, // replaced by the first refresh
-            Text = BuildTooltip(null, null),
+            Text = TrayTooltip.Build(DeviceInfo.NoDeviceYet.Name, null, null, [], _displayVersion),
             ContextMenuStrip = BuildMenu(),
             Visible = true,
         };
 
         _notifyIcon.MouseClick += OnTrayClick;
 
-        _timer = StartPollTimer(isSimulator ? MockPollIntervalMs : PollIntervalMs);
+        _timer = StartPollTimer(_isSimulator ? MockPollIntervalMs : PollIntervalMs);
         _followUp.Tick += OnFollowUpTickAsync;
         if (provider is HidPpBatteryProvider hid)
         {
@@ -88,14 +91,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private ContextMenuStrip BuildMenu()
     {
         var menu = new ContextMenuStrip();
+        _showInTrayMenu = new ShowInTrayMenu(ChooseTrayDevice);
         if (_provider is MockBatteryProvider mock)
         {
             menu.Items.Add(BuildSimulatorMenu(mock));
+            menu.Items.Add(_showInTrayMenu.Item);
             menu.Items.Add(NotificationsMenu.Build(() => _settings.Alerts, ApplyAlertSettings));
             menu.Items.Add(new ToolStripSeparator());
         }
         else
         {
+            menu.Items.Add(_showInTrayMenu.Item);
             menu.Items.Add(NotificationsMenu.Build(() => _settings.Alerts, ApplyAlertSettings));
             menu.Items.Add(new ToolStripSeparator());
             var startItem = BuildStartupItem();
@@ -196,6 +202,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _ = RefreshAsync(); // a new level is checked against the current battery at once
     }
 
+    private void ChooseTrayDevice(DeviceId device)
+    {
+        _settings = _settings with { TrayDevice = device }; // applies for this session even when the save fails
+        if (!_isSimulator && _settingsFile.Save(_settings) is { } problem)
+            ShowWarning(problem);
+        ShowTrayDevice(historyChanged: false); // the last readings are enough, no new read
+    }
+
+    private void SaveDeviceNames(IReadOnlyDictionary<DeviceId, string> names)
+    {
+        _settings = _settings with { DeviceNames = names };
+        if (_settingsFile.Save(_settings) is { } problem)
+            AppLog.Write(problem); // automatic save: no dialog
+    }
+
     private static void ShowWarning(string message) =>
         MessageBox.Show(message, AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
@@ -277,24 +298,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _refreshing = true;
         _stuckReadWatch.ReadStarted(Environment.TickCount64);
-        string statusLine;
-        BatteryStatus? status = null;
+        IReadOnlyList<DeviceReading> readings = [];
         try
         {
-            var readings = await _provider.ReadAsync();
-            status = readings[0].Status ?? throw new InvalidOperationException("The device reading failed.");
-            statusLine = status.ToDisplayString();
-            if (RecordReadings(readings))
-            {
-                RecomputeDrainRate();
-                if (!_exited)
-                    _overlay?.ReloadHistory();
-            }
+            readings = await _provider.ReadAsync();
         }
         catch (Exception)
         {
             // the provider logs the details
-            statusLine = "Battery read failed";
         }
         finally
         {
@@ -302,51 +313,61 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _stuckReadWatch.ReadFinished();
         }
 
-        if (!_exited) // the tray icon is gone if the app exited during the read
-            UpdateTray(status, statusLine);
-        return (true, status);
+        if (_exited) // the tray icon is gone if the app exited during the read
+            return (true, null);
+
+        _readings = readings;
+        ShowTrayDevice(historyChanged: RecordReadings(CurrentDevices().Tray.Device));
+        NotifyAlerts();
+        return (true, _devices?.Tray.Status);
     }
 
-    // Returns true when the first device's history changed: a new line, or it is the first read of this session.
-    private bool RecordReadings(IReadOnlyList<DeviceReading> readings)
+    private TrayDevices CurrentDevices() =>
+        TrayDevices.From(_readings, _settings.TrayDevice, _settings.DeviceNames, DateTimeOffset.UtcNow);
+
+    // Returns true when the tray device's history got a new line.
+    private bool RecordReadings(DeviceInfo trayDevice)
     {
         if (_histories is null)
             return false;
 
         var now = DateTimeOffset.UtcNow;
-        var firstDevice = readings[0].Device;
-        if (firstDevice == DeviceInfo.NoDeviceYet)
-            return false;
-
-        var firstHistory = _histories.For(firstDevice, now);
-        var changed = firstHistory != _history;
-        _history = firstHistory;
-        foreach (var (device, status) in readings)
+        var changed = false;
+        foreach (var (device, status) in _readings)
         {
-            if (status is null)
+            if (status is null || device.Id == DeviceInfo.NoDeviceYet.Id)
                 continue;
             var wrote = _histories.For(device, now).Record(status);
-            changed |= wrote && device == firstDevice;
+            changed |= wrote && device.Id == trayDevice.Id;
         }
         return changed;
     }
 
-    private void UpdateTray(BatteryStatus? status, string statusLine)
+    // The tray device's history is null in the simulator and while no device is known.
+    private bool UseHistoryOf(DeviceInfo trayDevice)
     {
-        _status = status;
-        _statusLine = statusLine;
+        var history = _histories is null || trayDevice.Id == DeviceInfo.NoDeviceYet.Id
+            ? null
+            : _histories.For(trayDevice, DateTimeOffset.UtcNow);
+        var switched = history != _history;
+        _history = history;
+        return switched;
+    }
+
+    // Everything that follows the tray device: history, drain rate, overlay, tooltip, icon and menu.
+    private void ShowTrayDevice(bool historyChanged)
+    {
         try
         {
-            _overlay?.SetStatus(status, statusLine, _drainPercentPerDay);
+            var devices = CurrentDevices();
+            _devices = devices;
+            var historyShown = UseHistoryOf(devices.Tray.Device) || historyChanged;
+            if (historyShown)
+                RecomputeDrainRate();
+            _showInTrayMenu?.Update(devices.Items);
+            ShowInOverlay(devices, historyShown);
             RefreshTooltip();
-
-            var indicator = TrayIndicator.From(status);
-            var iconSize = TrayIconSize.Current(); // checked each time: the scaling can change while the app runs
-            if (indicator != _indicator || iconSize != _iconSize)
-                ReplaceIcon(indicator, iconSize);
-
-            if (status is not null && _alerts.Update(status, _settings.Alerts) is { } alert)
-                ShowAlert(alert, status.Percent);
+            UpdateIcon(devices.Tray.Status);
         }
         catch (Exception ex)
         {
@@ -354,8 +375,47 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private void RefreshTooltip() =>
-        _notifyIcon.Text = BuildTooltip(_statusLine, _status is null ? null : RemainingTime.RemainingText(_status, _drainPercentPerDay));
+    private void ShowInOverlay(TrayDevices devices, bool historyShown)
+    {
+        if (_overlay is null)
+            return;
+        if (historyShown)
+            _overlay.ShowHistory(_history);
+        _overlay.SetStatus(devices.Tray.Status, devices.Headline, _drainPercentPerDay);
+    }
+
+    private void UpdateIcon(BatteryStatus? status)
+    {
+        var indicator = TrayIndicator.From(status);
+        var iconSize = TrayIconSize.Current(); // checked each time: the scaling can change while the app runs
+        if (indicator != _indicator || iconSize != _iconSize)
+            ReplaceIcon(indicator, iconSize);
+    }
+
+    private void NotifyAlerts()
+    {
+        try
+        {
+            var update = _tracker.Update(_readings, _settings.Alerts);
+            foreach (var alert in update.Alerts)
+                ShowAlert(alert);
+            if (update.NamesToSave is { } names && !_isSimulator)
+                SaveDeviceNames(names);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write($"Notifications failed: {ex}");
+        }
+    }
+
+    private void RefreshTooltip()
+    {
+        if (_devices is not { } devices)
+            return;
+
+        var remainingText = devices.Tray.Status is null ? null : RemainingTime.RemainingText(devices.Tray.Status, _drainPercentPerDay);
+        _notifyIcon.Text = TrayTooltip.Build(devices.TrayName, devices.StatusLine, remainingText, devices.Others, _displayVersion);
+    }
 
     private bool OverlayJustClosed() =>
         _overlayClosedAtMs is { } closedAt && Environment.TickCount64 - closedAt < ReopenGuardMs;
@@ -372,8 +432,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (OverlayJustClosed())
             return;
 
-        var overlay = new OverlayForm(_history);
-        overlay.SetStatus(_status, _statusLine, _drainPercentPerDay);
+        var overlay = new OverlayForm(_history, _isSimulator);
+        if (_devices is { } devices)
+            overlay.SetStatus(devices.Tray.Status, devices.Headline, _drainPercentPerDay);
         overlay.FormClosed += (_, _) =>
         {
             _overlay = null;
@@ -393,25 +454,25 @@ internal sealed class TrayApplicationContext : ApplicationContext
         oldIcon?.Dispose();
     }
 
-    private void ShowAlert(BatteryAlert alert, int? percent)
+    private void ShowAlert(DeviceAlert deviceAlert)
     {
-        var (title, text) = BatteryAlertText.For(alert, percent, "Mouse");
-        var icon = alert == BatteryAlert.Full ? ToolTipIcon.Info : ToolTipIcon.Warning;
-        AppLog.Write($"Notification: {title} ({percent}%)");
+        var (title, text) = BatteryAlertText.For(deviceAlert.Alert, deviceAlert.Percent, deviceAlert.DeviceName);
+        var icon = deviceAlert.Alert == BatteryAlert.Full ? ToolTipIcon.Info : ToolTipIcon.Warning;
+        AppLog.Write($"Notification: {title} ({deviceAlert.Percent}%)");
         _notifyIcon.ShowBalloonTip(BalloonTimeoutMs, title, text, icon);
     }
 
     private void RecomputeDrainRate()
     {
         if (_history is null)
+        {
+            _drainPercentPerDay = null;
             return;
+        }
 
         var now = DateTimeOffset.UtcNow;
         _drainPercentPerDay = RemainingTime.DrainPercentPerDay(_history.ReadSince(now - RemainingTime.Window), now);
     }
-
-    private string BuildTooltip(string? statusLine, string? remainingText) =>
-        TrayTooltip.Build("Mouse", statusLine, remainingText, [], _displayVersion);
 
     private void ExitApp()
     {

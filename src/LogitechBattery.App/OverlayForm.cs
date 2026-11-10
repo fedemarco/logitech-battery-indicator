@@ -67,19 +67,20 @@ internal sealed class OverlayForm : Form
 
     private static readonly int[] PercentGridLines = [0, 50, 100];
 
-    private readonly BatteryHistory? _history;
+    private readonly bool _isSimulator; // the simulator has no history files; a real device may have none yet
+    private BatteryHistory? _history;
     private IReadOnlyList<HistoryRecord> _records = [];
     private BatteryStatus? _status;
-    private string _statusLine = "";
+    private string _headline = "";
     private string _estimateText = "";
     private string? _lastChargeText;
     private bool _systemDrawsBorder;
     private TimeRangeOption _selectedRange = TimeRanges[0]; // every open starts with the 24 h view
     private HistoryChart _chart = HistoryChart.Build([], DateTimeOffset.UtcNow, HistoryChart.Day);
 
-    public OverlayForm(BatteryHistory? history)
+    public OverlayForm(BatteryHistory? history, bool isSimulator)
     {
-        _history = history;
+        _isSimulator = isSimulator;
 
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
@@ -91,22 +92,25 @@ internal sealed class OverlayForm : Form
         // Created on the monitor under the cursor, so it gets that monitor's DPI; OnLoad then sizes and places it.
         Location = TargetScreen().WorkingArea.Location;
 
-        ReloadHistory();
+        ShowHistory(history);
     }
 
     private float DpiScale => DeviceDpi / 96f;
 
-    public void SetStatus(BatteryStatus? status, string statusLine, double? drainPercentPerDay)
+    /// <summary>The headline is the device name and its status.</summary>
+    public void SetStatus(BatteryStatus? status, string headline, double? drainPercentPerDay)
     {
         _status = status;
-        _statusLine = statusLine;
-        _estimateText = _history is null ? "" : RemainingTime.EstimateText(status, drainPercentPerDay); // the simulator shows the status line only
+        _headline = headline;
+        _estimateText = _isSimulator ? "" : RemainingTime.EstimateText(status, drainPercentPerDay); // the simulator shows the headline only
         UpdateLastChargeText();
         Invalidate();
     }
 
-    public void ReloadHistory()
+    /// <summary>Shows the history of another device, or reads the same one again.</summary>
+    public void ShowHistory(BatteryHistory? history)
     {
+        _history = history;
         // ReadSince returns nothing when the file is missing or locked.
         _records = _history?.ReadSince(DateTimeOffset.UtcNow - BatteryHistory.Retention) ?? [];
         RebuildChart();
@@ -218,7 +222,7 @@ internal sealed class OverlayForm : Form
         var statusLine = Scaled(PanelLayout.Margin, PanelLayout.StatusTop, PanelLayout.ContentWidth, PanelLayout.StatusHeight);
         using var statusFont = PixelFont(PanelLayout.StatusFontSize, FontStyle.Bold);
         using var detailFont = PixelFont(PanelLayout.DetailFontSize);
-        DrawText(graphics, _statusLine, statusFont, PrimaryText, statusLine, StringAlignment.Near);
+        DrawText(graphics, _headline, statusFont, PrimaryText, statusLine, StringAlignment.Near);
         DrawText(graphics, _estimateText, detailFont, SecondaryText, statusLine with { Y = statusLine.Y + PanelLayout.EstimateOffsetY * DpiScale }, StringAlignment.Far);
 
         if (_lastChargeText is null)
@@ -262,7 +266,7 @@ internal sealed class OverlayForm : Form
 
     private string? EmptyMessage()
     {
-        if (_history is null)
+        if (_isSimulator)
             return "No history in simulator mode";
         return _chart.Points.Count == 0 ? "No history yet" : null;
     }
