@@ -31,6 +31,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private BatteryHistory? _history; // of the tray device: the drain rate and the overlay follow it
     private readonly SettingsFile _settingsFile;
     private AppSettings _settings;
+    private DeviceId? _mockTrayDevice; // the simulator's choice lives here so that no save can write it to settings.ini
     private readonly DeviceTracker _tracker;
     private readonly bool _isSimulator;
     private readonly FollowUpSchedule _followUpSchedule = new();
@@ -204,9 +205,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void ChooseTrayDevice(DeviceId device)
     {
-        _settings = _settings with { TrayDevice = device }; // applies for this session even when the save fails
-        if (!_isSimulator && _settingsFile.Save(_settings) is { } problem)
-            ShowWarning(problem);
+        if (_isSimulator)
+            _mockTrayDevice = device;
+        else
+        {
+            _settings = _settings with { TrayDevice = device }; // applies for this session even when the save fails
+            if (_settingsFile.Save(_settings) is { } problem)
+                ShowWarning(problem);
+        }
         ShowTrayDevice(historyChanged: false); // the last readings are enough, no new read
     }
 
@@ -322,8 +328,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         return (true, _devices?.Tray.Status);
     }
 
-    private TrayDevices CurrentDevices() =>
-        TrayDevices.From(_readings, _settings.TrayDevice, _settings.DeviceNames, DateTimeOffset.UtcNow);
+    // The simulator ignores the saved tray device and names: they belong to the real devices, which it does not show.
+    private TrayDevices CurrentDevices() => _isSimulator
+        ? TrayDevices.From(_readings, _mockTrayDevice, new Dictionary<DeviceId, string>(), DateTimeOffset.UtcNow)
+        : TrayDevices.From(_readings, _settings.TrayDevice, _settings.DeviceNames, DateTimeOffset.UtcNow);
 
     // Returns true when the tray device's history got a new line.
     private bool RecordReadings(DeviceInfo trayDevice)

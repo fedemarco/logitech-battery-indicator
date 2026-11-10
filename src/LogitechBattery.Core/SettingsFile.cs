@@ -140,7 +140,7 @@ public sealed class SettingsFile(string path)
     }
 
     /// <summary>A name must never add a line or break the format: no control characters (CR and LF included), at most 64 characters.</summary>
-    private static string CleanName(string name)
+    internal static string CleanName(string name)
     {
         var withoutControls = new string(name.Where(character => !char.IsControl(character)).ToArray()).Trim();
         var cut = withoutControls.Length <= MaxNameCharacters ? withoutControls : withoutControls[..MaxNameCharacters];

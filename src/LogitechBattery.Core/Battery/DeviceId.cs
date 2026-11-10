@@ -13,7 +13,7 @@ public sealed partial record DeviceId
     private const string AllZeroUnitId = "00000000";
     private const string AllOnesUnitId = "FFFFFFFF";
 
-    [GeneratedRegex("^([0-9A-F]{8}|R[0-9A-F]{4}S[0-9A-F]{2})$")]
+    [GeneratedRegex(@"\A([0-9A-F]{8}|R[0-9A-F]{4}S[0-9A-F]{2})\z")]
     private static partial Regex ValidForm();
 
     private readonly string _text;

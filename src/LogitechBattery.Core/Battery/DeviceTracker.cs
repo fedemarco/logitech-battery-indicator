@@ -36,9 +36,11 @@ public sealed class DeviceTracker(IReadOnlyDictionary<DeviceId, string> savedNam
         var changed = false;
         foreach (var (device, _) in realReadings)
         {
-            if (_knownNames.TryGetValue(device.Id, out var knownName) && knownName == device.Name)
+            // The settings file saves the cleaned name, so compare that form or the name would be saved again at every start.
+            var cleanName = SettingsFile.CleanName(device.Name);
+            if (_knownNames.TryGetValue(device.Id, out var knownName) && knownName == cleanName)
                 continue;
-            _knownNames[device.Id] = device.Name;
+            _knownNames[device.Id] = cleanName;
             changed = true;
         }
         return changed ? new Dictionary<DeviceId, string>(_knownNames) : null;

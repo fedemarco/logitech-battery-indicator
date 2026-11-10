@@ -72,7 +72,7 @@ internal static class DeviceDiscovery
 
     /// <summary>
     /// The unit ID (feature 0x0003). The route fallback when the device has no such feature, answers with an error,
-    /// or reports an invalid ID: those answers do not change on the next read. Only a missing answer is retried.
+    /// or reports an invalid ID: those answers do not change on the next read. Only a missing answer or a Busy error is retried.
     /// </summary>
     private static Lookup<DeviceId> ReadId(HidPpChannel channel, byte deviceIndex, CancellationToken cancellationToken)
     {
@@ -86,12 +86,14 @@ internal static class DeviceDiscovery
         var request = HidPpMessage.BuildRequest(deviceIndex, feature.Value, DeviceInformation.GetDeviceInfoFunction, HidPpMessage.SoftwareId);
         var answer = channel.Exchange(request, Timeout, cancellationToken);
         if (answer.Response is not { } response)
-            return answer.ErrorCode is null ? new Lookup<DeviceId>(LookupOutcome.Unanswered) : routeFallback;
+            return IsTransient(answer.ErrorCode) ? new Lookup<DeviceId>(LookupOutcome.Unanswered) : routeFallback;
 
         return DeviceId.TryParse(DeviceInformation.UnitIdOf(HidPpMessage.ParamsOf(response)), out var unitId)
             ? Lookup<DeviceId>.Of(unitId)
             : routeFallback;
     }
+
+    private static bool IsTransient(byte? errorCode) => errorCode is null or DeviceInformation.BusyErrorCode;
 
     /// <summary>Asks the root feature for the index of <paramref name="featureId"/>.</summary>
     private static Lookup<byte> FindFeatureIndex(HidPpChannel channel, byte deviceIndex, ushort featureId, CancellationToken cancellationToken)

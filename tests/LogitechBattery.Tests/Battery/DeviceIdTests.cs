@@ -25,6 +25,7 @@ public class DeviceIdTests
     [InlineData("rC54DS01")]
     [InlineData("RC54DS0G")]
     [InlineData("..\\evil")]
+    [InlineData("62C31634\n")] // `$` would match before a trailing newline
     [InlineData("")]
     [InlineData(null)]
     public void Invalid_ids_are_rejected(string? text)

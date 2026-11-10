@@ -94,4 +94,15 @@ public class DeviceTrackerTests
 
         Assert.Null(tracker.Update([Discharging(Mouse, 50)], Settings).NamesToSave);
     }
+
+    [Fact]
+    public void A_name_that_the_settings_file_cleans_is_not_reported_again_after_it_was_saved_cleaned()
+    {
+        var messyMouse = Mouse with { Name = "  PRO\tX2\n" };
+        var savedCleaned = new Dictionary<DeviceId, string> { [Mouse.Id] = "PROX2" };
+
+        var update = new DeviceTracker(savedCleaned).Update([Discharging(messyMouse, 50)], Settings);
+
+        Assert.Null(update.NamesToSave);
+    }
 }

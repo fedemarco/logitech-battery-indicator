@@ -2,7 +2,7 @@ namespace LogitechBattery.Battery;
 
 /// <summary>
 /// One <see cref="BatteryHistory"/> file per device in <c>history\&lt;DeviceId&gt;.csv</c>, and the one-time move of the
-/// single <c>history.csv</c> of earlier versions. Nothing here throws: failures are logged and the history stays as it is.
+/// single <c>history.csv</c> of earlier versions. File failures are logged and the history stays as it is. Only <see cref="For"/> throws, for <see cref="DeviceInfo.NoDeviceYet"/>: a programming error that the App guards against.
 /// </summary>
 public sealed class DeviceHistories(string dataDirectory)
 {
