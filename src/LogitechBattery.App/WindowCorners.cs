@@ -27,8 +27,7 @@ internal static class WindowCorners
                 return false;
 
             var colorRef = borderColor.R | (borderColor.G << 8) | (borderColor.B << 16); // COLORREF is 0x00BBGGRR
-            DwmSetWindowAttribute(handle, BorderColorAttribute, ref colorRef, sizeof(int));
-            return true;
+            return DwmSetWindowAttribute(handle, BorderColorAttribute, ref colorRef, sizeof(int)) == Success;
         }
         catch (Exception exception) when (exception is DllNotFoundException or EntryPointNotFoundException)
         {
