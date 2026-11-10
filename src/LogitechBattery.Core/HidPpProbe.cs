@@ -13,6 +13,8 @@ namespace LogitechBattery;
 public sealed class HidPpProbe
 {
     private const string ReportFileName = "probe.txt";
+    private const ushort BatteryStatusFeatureId = 0x1000;
+    private const ushort BatteryVoltageFeatureId = 0x1001;
     private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(1);
 
     /// <summary>A device index on an open channel.</summary>
@@ -122,6 +124,10 @@ public sealed class HidPpProbe
 
         if (DescribeFeature(link, DeviceName.FeatureId) is { } nameFeatureIndex)
             ReportDeviceName(link, nameFeatureIndex);
+        if (DescribeFeature(link, DeviceInformation.FeatureId) is { } informationFeatureIndex)
+            ReportUnitId(link, informationFeatureIndex);
+        DescribeFeature(link, BatteryStatusFeatureId);
+        DescribeFeature(link, BatteryVoltageFeatureId);
         if (DescribeFeature(link, UnifiedBattery.FeatureId) is { } batteryFeatureIndex)
             ReportUnifiedBattery(link, batteryFeatureIndex);
     }
@@ -156,6 +162,12 @@ public sealed class HidPpProbe
         var chunks = DeviceName.ReadChunks(length, position =>
             Call(link, featureIndex, DeviceName.GetNameFunction, position) is { } chunk ? HidPpMessage.ParamsOf(chunk) : null);
         Log($"  device name: \"{DeviceName.Assemble(length, chunks)}\"");
+    }
+
+    private void ReportUnitId(DeviceLink link, byte featureIndex)
+    {
+        if (Call(link, featureIndex, DeviceInformation.GetDeviceInfoFunction) is { } response)
+            Log($"  unit ID: {DeviceInformation.UnitIdOf(HidPpMessage.ParamsOf(response))}");
     }
 
     private void ReportUnifiedBattery(DeviceLink link, byte featureIndex)
