@@ -68,12 +68,12 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         }
     }
 
-    // Runs on a reader thread: the device name comes only from the routes (immutable array), never from KnownDevices.
+    // Runs on a reader thread: the device name comes only from the routes' name map (immutable), never from KnownDevices.
     private (string Key, object? Value)[] LinkFields(HidPpChannel channel, byte deviceIndex)
     {
-        var route = _routes.All.FirstOrDefault(candidate => candidate.Channel == channel && candidate.DeviceIndex == deviceIndex);
-        (string Key, object? Value) devIdx = ("devIdx", $"{deviceIndex:X2}"), receiver = ("receiver", channel.Key);
-        return route is null ? [receiver, devIdx] : [receiver, devIdx, ("device", route.Device.Name)];
+        var name = _routes.NameAt(new Slot(channel.Key, deviceIndex));
+        (string Key, object? Value) devIdx = ("devIdx", $"{deviceIndex:X2}"), receiver = ("receiver", HidPpDevices.LogId(channel.Key));
+        return name is null ? [receiver, devIdx] : [receiver, devIdx, ("device", name)];
     }
 
     private IReadOnlyList<DeviceReading> Read(CancellationToken cancellationToken)
@@ -251,7 +251,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
 
     private void Lost(IHidPpChannel lostChannel)
     {
-        AppLog.Info("Device lost", ("receiver", lostChannel.Key));
+        AppLog.Info("Device lost", ("receiver", HidPpDevices.LogId(lostChannel.Key)));
         if (lostChannel is HidPpChannel channel) // discovery and routes know only the interface; every channel they get is one of ours
         {
             channel.Dispose();
@@ -321,7 +321,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     {
         _rediscover = true;
         if (_devicesFailedToOpen.Add(device.Key))
-            AppLog.Warn("Cannot open", ("receiver", device.Key));
+            AppLog.Warn("Cannot open", ("receiver", HidPpDevices.LogId(device.Key)));
     }
 
     /// <summary>

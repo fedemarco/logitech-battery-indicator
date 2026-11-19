@@ -14,12 +14,17 @@ internal sealed class DeviceRoutes
     private enum SlotState { Empty, Occupied }
 
     private volatile BatteryTarget[] _routes = [];
+    // Replaced, never changed, so reader threads can look up a name at any time. Kept when routes are dropped: the device at a slot stays the same.
+    private volatile IReadOnlyDictionary<Slot, string> _deviceNamesBySlot = new Dictionary<Slot, string>();
     private readonly HashSet<Slot> _slotsWithoutBattery = [];
     private readonly HashSet<Slot> _slotsOfRoutedDevices = [];
 
     public KnownDevices Known { get; } = new();
 
     public IReadOnlyList<BatteryTarget> All => _routes;
+
+    /// <summary>The name of the last device found at the slot, even when it does not answer now; null when none was found.</summary>
+    public string? NameAt(Slot slot) => _deviceNamesBySlot.GetValueOrDefault(slot);
 
     public bool IsBatteryEventSource(IHidPpChannel channel, byte[] report) =>
         _routes.Any(route => route.Channel == channel && HidPpMessage.IsEventFrom(report, route.DeviceIndex, route.FeatureIndex));
@@ -126,7 +131,7 @@ internal sealed class DeviceRoutes
         }
         catch (Exception ex) when (ex is not (IOException or TimeoutException or OperationCanceledException))
         {
-            AppLog.Warn("Skipping device", [("receiver", slot.ChannelKey), ("devIdx", $"{slot.DeviceIndex:X2}"), ("reason", "probingFailed"), .. AppLog.FailureWithStack(ex)]);
+            AppLog.Warn("Skipping device", [("receiver", HidPpDevices.LogId(slot.ChannelKey)), ("devIdx", $"{slot.DeviceIndex:X2}"), ("reason", "probingFailed"), .. AppLog.FailureWithStack(ex)]);
             _slotsWithoutBattery.Add(slot);
             return SlotProbe.NoDevice;
         }
@@ -137,6 +142,7 @@ internal sealed class DeviceRoutes
 
     private void Add(BatteryTarget target)
     {
+        RememberName(target); // also for a second route to a routed device: its link events name the device too
         if (_routes.Any(route => route.Device.Id == target.Device.Id))
         {
             _slotsOfRoutedDevices.Add(target.Slot); // the same device on a second route: the first one found (the cable) stays
@@ -147,6 +153,9 @@ internal sealed class DeviceRoutes
             LogDeviceFound(target);
         _routes = [.. _routes, target];
     }
+
+    private void RememberName(BatteryTarget target) =>
+        _deviceNamesBySlot = new Dictionary<Slot, string>(_deviceNamesBySlot) { [target.Slot] = target.Device.Name };
 
     private static void LogDeviceFound(BatteryTarget target)
     {

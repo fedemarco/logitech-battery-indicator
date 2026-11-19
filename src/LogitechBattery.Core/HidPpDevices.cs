@@ -51,6 +51,8 @@ internal static class HidPpDevices
         return $"{prefix}#{interfacePart}#{instancePart}".ToLowerInvariant();
     }
 
+    /// <summary>The short form of a channel key for the log: its instance part (after the last '#'), or the whole key if it has none.</summary>
+    public static string LogId(string key) => key[(key.LastIndexOf('#') + 1)..];
 
     private static string WithoutCollectionSuffix(string interfacePart)
     {

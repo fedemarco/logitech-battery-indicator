@@ -25,6 +25,42 @@ public class DeviceRoutesTests
     }
 
     [Fact]
+    public void The_name_of_a_device_found_is_known_by_its_slot()
+    {
+        var routes = DiscoverMouseOnFirstSlot(out var channel);
+
+        Assert.Equal("PRO X2 SUPERSTRIKE", routes.NameAt(new Slot(channel.Key, FirstSlot)));
+    }
+
+    [Fact]
+    public void The_name_stays_known_after_the_route_is_dropped()
+    {
+        var routes = DiscoverMouseOnFirstSlot(out var channel);
+
+        routes.Drop(Assert.Single(routes.All));
+
+        Assert.Equal("PRO X2 SUPERSTRIKE", routes.NameAt(new Slot(channel.Key, FirstSlot)));
+    }
+
+    [Fact]
+    public void The_name_stays_known_after_the_routes_are_cleared()
+    {
+        var routes = DiscoverMouseOnFirstSlot(out var channel);
+
+        routes.Clear();
+
+        Assert.Equal("PRO X2 SUPERSTRIKE", routes.NameAt(new Slot(channel.Key, FirstSlot)));
+    }
+
+    [Fact]
+    public void A_slot_where_no_device_was_found_has_no_name()
+    {
+        var routes = DiscoverMouseOnFirstSlot(out var channel);
+
+        Assert.Null(routes.NameAt(new Slot(channel.Key, SecondSlot)));
+    }
+
+    [Fact]
     public void Receiver_slots_are_not_probed_on_a_channel_where_the_cable_index_answers()
     {
         var cable = new FakeHidPpChannel().With(CableIndex, Mouse(MouseUnitId));
@@ -86,6 +122,14 @@ public class DeviceRoutesTests
         routes.ForgetSkippedSlots();
         routes.Discover([channel], CancellationToken.None);
         Assert.True(channel.RequestsTo(FirstSlot) > requestsAfterFirstDiscovery);
+    }
+
+    private static DeviceRoutes DiscoverMouseOnFirstSlot(out FakeHidPpChannel channel)
+    {
+        channel = new FakeHidPpChannel().With(FirstSlot, Mouse(MouseUnitId));
+        var routes = new DeviceRoutes();
+        routes.Discover([channel], CancellationToken.None);
+        return routes;
     }
 
     private static FakeDevice Mouse(string unitId) =>

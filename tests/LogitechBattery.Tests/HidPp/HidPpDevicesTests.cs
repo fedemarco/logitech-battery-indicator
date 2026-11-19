@@ -33,4 +33,16 @@ public class HidPpDevicesTests
 
         Assert.Equal(path, HidPpDevices.GroupKey(path));
     }
+
+    [Fact]
+    public void The_log_id_of_a_receiver_key_is_its_instance_part()
+    {
+        Assert.Equal("a&36e67c03&0", HidPpDevices.LogId(HidPpDevices.GroupKey(Receiver2Col01)));
+    }
+
+    [Fact]
+    public void The_log_id_of_a_key_without_a_hash_is_the_whole_key()
+    {
+        Assert.Equal("/dev/hidraw3", HidPpDevices.LogId("/dev/hidraw3"));
+    }
 }
