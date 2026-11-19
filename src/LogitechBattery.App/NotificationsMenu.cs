@@ -8,34 +8,24 @@ internal static class NotificationsMenu
     public static ToolStripMenuItem Build(Func<AlertSettings> current, Action<AlertSettings> apply, Func<bool> checkForUpdates, Action toggleCheckForUpdates)
     {
         var lowItem = new ToolStripMenuItem();
-        var fullItem = new ToggleMenuItem("Fully charged");
-        var updatesItem = new ToggleMenuItem("New app versions");
-
-        void RefreshMarks() => ShowCurrent(current(), lowItem, fullItem, checkForUpdates(), updatesItem);
-        void ApplyAndRefresh(AlertSettings updated)
-        {
-            apply(updated);
-            RefreshMarks();
-        }
-
         foreach (var percent in AlertSettings.LowChoices)
         {
-            var choice = new ToggleMenuItem($"{percent}%") { Tag = percent };
-            choice.Click += (_, _) => ApplyAndRefresh(current() with { LowPercent = percent });
+            var choice = new ToolStripMenuItem($"{percent}%") { Tag = percent };
+            choice.Click += (_, _) => apply(current() with { LowPercent = percent });
             lowItem.DropDownItems.Add(choice);
         }
-        fullItem.Click += (_, _) => ApplyAndRefresh(current() with { FullChargeAlert = !current().FullChargeAlert });
-        updatesItem.Click += (_, _) =>
-        {
-            toggleCheckForUpdates();
-            RefreshMarks();
-        };
+
+        var fullItem = new ToolStripMenuItem("Fully charged");
+        fullItem.Click += (_, _) => apply(current() with { FullChargeAlert = !current().FullChargeAlert });
+
+        var updatesItem = new ToolStripMenuItem("New app versions");
+        updatesItem.Click += (_, _) => toggleCheckForUpdates();
 
         var menu = new ToolStripMenuItem("Notifications");
         menu.DropDownItems.Add(lowItem);
         menu.DropDownItems.Add(fullItem);
         menu.DropDownItems.Add(updatesItem);
-        menu.DropDownOpening += (_, _) => RefreshMarks();
+        menu.DropDownOpening += (_, _) => ShowCurrent(current(), lowItem, fullItem, checkForUpdates(), updatesItem);
         return menu;
     }
 
