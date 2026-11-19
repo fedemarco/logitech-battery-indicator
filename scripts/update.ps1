@@ -51,12 +51,15 @@ try {
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     $target = Join-Path $InstallDir 'LogitechBattery.exe'
-    # Windows can keep the exe locked for a moment after the process has exited, so the copy is retried briefly.
+    # Windows can keep the exe locked for a moment after the process has exited (reported as "in use" or "access denied"),
+    # so the copy is retried for up to about 5 seconds.
+    $maxCopyAttempts = 10
+    $copyRetryDelayMs = 500
     for ($attempt = 1; ; $attempt++) {
         try { Copy-Item $exe $target -Force -ErrorAction Stop; break }
-        catch [System.IO.IOException] {
-            if ($attempt -ge 10) { throw }
-            Start-Sleep -Milliseconds 500
+        catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+            if ($attempt -ge $maxCopyAttempts) { throw }
+            Start-Sleep -Milliseconds $copyRetryDelayMs
         }
     }
     Start-Process $target

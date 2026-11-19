@@ -14,7 +14,8 @@ internal sealed class DeviceRoutes
     private enum SlotState { Empty, Occupied }
 
     private volatile BatteryTarget[] _routes = [];
-    // Replaced, never changed, so reader threads can look up a name at any time. Kept when routes are dropped: the device at a slot stays the same.
+    // The last device name seen per slot, for log lines written on reader threads. Replaced, never changed, so any thread can read it;
+    // kept when routes are dropped, because the device at a slot stays the same.
     private volatile IReadOnlyDictionary<Slot, string> _deviceNamesBySlot = new Dictionary<Slot, string>();
     private readonly HashSet<Slot> _slotsWithoutBattery = [];
     private readonly HashSet<Slot> _slotsOfRoutedDevices = [];
@@ -115,6 +116,7 @@ internal sealed class DeviceRoutes
                 return SlotState.Occupied;
             case SlotProbe.NoUnifiedBattery skipped:
                 _slotsWithoutBattery.Add(slot);
+                RememberName(slot, skipped.DeviceName); // a device paired into a slot replaces the name of the one before
                 AppLog.Warn("Skipping device", ("device", skipped.DeviceName), ("reason", "noUnifiedBattery"));
                 return SlotState.Occupied;
             default:
@@ -142,17 +144,17 @@ internal sealed class DeviceRoutes
 
     private void Add(BatteryTarget target)
     {
-        RememberName(target); // also for a second route to a routed device: its link events name the device too
+        RememberName(target.Slot, target.Device.Name); // also for a second route to a routed device: its link events name the device too
         var routeToSameDevice = _routes.FirstOrDefault(route => route.Device.Id == target.Device.Id);
         if (routeToSameDevice is null)
         {
-            SeenAt(target);
+            RecordSeen(target);
             _routes = [.. _routes, target];
         }
         else if (IsOnCable(target) && !IsOnCable(routeToSameDevice))
         {
             // A routed receiver slot is not probed again, so a cable plugged in later wins here, by replacement.
-            SeenAt(target); // the device moved to the cable: its "not answering" state now follows the cable
+            RecordSeen(target); // the device moved to the cable: its "not answering" state now follows the cable
             _slotsOfRoutedDevices.Add(routeToSameDevice.Slot);
             _routes = [.. _routes.Where(route => route != routeToSameDevice), target];
         }
@@ -162,7 +164,7 @@ internal sealed class DeviceRoutes
         }
     }
 
-    private void SeenAt(BatteryTarget target)
+    private void RecordSeen(BatteryTarget target)
     {
         if (Known.Seen(target.Device, target.Slot))
             LogDeviceFound(target);
@@ -170,8 +172,8 @@ internal sealed class DeviceRoutes
 
     private static bool IsOnCable(BatteryTarget target) => HidPpMessage.CableDeviceIndexes.Contains(target.DeviceIndex);
 
-    private void RememberName(BatteryTarget target) =>
-        _deviceNamesBySlot = new Dictionary<Slot, string>(_deviceNamesBySlot) { [target.Slot] = target.Device.Name };
+    private void RememberName(Slot slot, string name) =>
+        _deviceNamesBySlot = new Dictionary<Slot, string>(_deviceNamesBySlot) { [slot] = name };
 
     private static void LogDeviceFound(BatteryTarget target)
     {

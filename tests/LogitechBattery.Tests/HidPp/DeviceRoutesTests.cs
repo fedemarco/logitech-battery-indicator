@@ -90,6 +90,17 @@ public class DeviceRoutesTests
     }
 
     [Fact]
+    public void A_skipped_device_without_Unified_Battery_is_also_known_by_its_slot()
+    {
+        var channel = new FakeHidPpChannel().With(FirstSlot, FakeDevice.Awake().WithName("Keyboard"));
+        var routes = new DeviceRoutes();
+
+        routes.Discover([channel], CancellationToken.None);
+
+        Assert.Equal("Keyboard", routes.NameAt(new Slot(channel.Key, FirstSlot)));
+    }
+
+    [Fact]
     public void Receiver_slots_are_not_probed_on_a_channel_where_the_cable_index_answers()
     {
         var cable = new FakeHidPpChannel().With(CableIndex, Mouse(MouseUnitId));
