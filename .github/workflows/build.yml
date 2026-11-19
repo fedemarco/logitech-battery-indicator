@@ -31,7 +31,7 @@ jobs:
       - name: Smoke test (the mock app must start, keep running and stay inside the memory limit)
         shell: pwsh
         env:
-          # Memory gate: the budgets, the baseline and the reason are in CLAUDE.md ("Memory gate").
+          # Memory gate: private bytes and thread count of the published exe in --mock mode.
           MAX_PRIVATE_MB: 20
           MAX_THREADS: 24 # thread-pool threads vary from run to run (11 to 16 seen), so this only catches a real leak
         run: |

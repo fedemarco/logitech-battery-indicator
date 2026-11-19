@@ -14,7 +14,7 @@ This is a hobby project. I answer on a best-effort basis, usually within 14 days
 
 - A crafted USB or HID device, or a HID++ report, that crashes the app or does more than that.
 - A file written outside `%LOCALAPPDATA%\LogitechBattery`.
-- A damaged `history.csv` that does harm.
+- A damaged history file or `settings.ini` that does harm.
 
 ## Facts that help a report
 
