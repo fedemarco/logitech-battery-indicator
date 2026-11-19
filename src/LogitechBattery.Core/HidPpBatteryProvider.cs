@@ -23,6 +23,8 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     private readonly object _readLock = new();
     private readonly List<HidPpChannel> _channels = [];
     private readonly DeviceRoutes _routes = new();
+    private readonly AnswerTolerance _answerTolerance = new();
+    private readonly ReportedLinkDowns _linkDowns = new();
     private readonly Dictionary<DeviceId, ConnectionState> _lastStates = [];
     private volatile bool _rediscover = true;
     private volatile bool _reopen;
@@ -59,6 +61,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         if (ReceiverNotifications.ReadConnection(report) is { } connection)
         {
             AppLog.Info(connection.LinkEstablished ? "Link up" : "Link down", LinkFields(channel, connection.DeviceIndex));
+            RecordLink(new Slot(channel.Key, connection.DeviceIndex), connection.LinkEstablished);
             ChangeDetected?.Invoke();
         }
         else if (_routes.IsBatteryEventSource(channel, report))
@@ -66,6 +69,14 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
             AppLog.Info("Battery event");
             ChangeDetected?.Invoke();
         }
+    }
+
+    private void RecordLink(Slot slot, bool linkEstablished)
+    {
+        if (linkEstablished)
+            _linkDowns.Forget(slot);
+        else
+            _linkDowns.Record(slot);
     }
 
     // Runs on a reader thread: the device name comes only from the routes' name map (immutable), never from KnownDevices.
@@ -82,6 +93,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         {
             try
             {
+                _answerTolerance.StartRead();
                 // A lost channel is followed by one immediate rediscovery (e.g. cable unplugged while the receiver is still there).
                 var pass = ReadCore(cancellationToken);
                 if (pass.ChannelLost)
@@ -155,25 +167,49 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
                 continue;
             }
             var read = ReadStatus(route, now, cancellationToken);
-            switch (read.Outcome)
+            // Taken after the read, for every outcome: a link down that arrived during the read must count, and an answer clears it.
+            var linkWentDown = _linkDowns.Take(route.Slot);
+            switch (read)
             {
-                case RouteOutcome.Answered:
-                    statuses[route.Device.Id] = read.Status;
+                case { Outcome: RouteOutcome.Answered, Status: { } status }:
+                    KeepAnswer(route, status, statuses);
                     break;
-                case RouteOutcome.NoAnswer:
-                    _routes.Drop(route); // rediscover next time (the device may be paired to another slot); the channel stays open to hear it wake up
+                case { Outcome: RouteOutcome.NoAnswer }:
+                    KeepOrDropMissedRoute(route, linkWentDown, statuses);
                     break;
-                case RouteOutcome.Failed:
-                    statuses[route.Device.Id] = null;
-                    _routes.Drop(route); // indexes may be stale (e.g. re-paired): rediscover next time
+                case { Outcome: RouteOutcome.Failed }:
+                    ReportFailure(route, statuses);
                     break;
-                case RouteOutcome.ChannelLost:
+                case { Outcome: RouteOutcome.ChannelLost }:
                     Lost(route.Channel);
                     channelLost = true;
                     break;
             }
         }
         return channelLost;
+    }
+
+    private void KeepAnswer(BatteryTarget route, BatteryStatus status, Dictionary<DeviceId, BatteryStatus?> statuses)
+    {
+        statuses[route.Device.Id] = status;
+        _answerTolerance.Answered(route.Device.Id, status);
+    }
+
+    private void ReportFailure(BatteryTarget route, Dictionary<DeviceId, BatteryStatus?> statuses)
+    {
+        statuses[route.Device.Id] = null;
+        _answerTolerance.Failed(route.Device.Id);
+        _routes.Drop(route); // indexes may be stale (e.g. re-paired): rediscover next time
+    }
+
+    private void KeepOrDropMissedRoute(BatteryTarget route, bool linkWentDown, Dictionary<DeviceId, BatteryStatus?> statuses)
+    {
+        if (_answerTolerance.StatusToKeepAfterMissedRead(route.Device.Id, linkWentDown) is { } keptStatus)
+        {
+            statuses[route.Device.Id] = keptStatus;
+            return;
+        }
+        _routes.Drop(route); // rediscover next time (the device may be paired to another slot); the channel stays open to hear it wake up
     }
 
     internal static RouteRead ReadStatus(BatteryTarget route, DateTimeOffset now, CancellationToken cancellationToken)
@@ -256,12 +292,25 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
             channel.Dispose();
             _channels.Remove(channel);
         }
+        ForgetDevicesOn(lostChannel);
         _routes.DropRoutesOn(lostChannel);
         _rediscover = true;
     }
 
+    // A status from before the channel was lost must never be kept as current.
+    private void ForgetDevicesOn(IHidPpChannel channel)
+    {
+        foreach (var route in _routes.All.Where(route => route.Channel == channel))
+        {
+            _answerTolerance.Forget(route.Device.Id);
+            _linkDowns.Forget(route.Slot);
+        }
+    }
+
     private void CloseAllChannels()
     {
+        _answerTolerance.Clear();
+        _linkDowns.Clear();
         foreach (var channel in _channels)
             channel.Dispose();
         _channels.Clear();
