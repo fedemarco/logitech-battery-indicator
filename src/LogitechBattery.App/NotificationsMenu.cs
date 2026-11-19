@@ -21,6 +21,11 @@ internal static class NotificationsMenu
         var updatesItem = new ToolStripMenuItem("New app versions");
         updatesItem.Click += (_, _) => toggleCheckForUpdates();
 
+        // A quick click right after passing over "Low battery" was lost while its submenu was still open (seen on Windows),
+        // so the submenu closes as soon as the pointer reaches one of the switches.
+        fullItem.MouseEnter += (_, _) => lowItem.HideDropDown();
+        updatesItem.MouseEnter += (_, _) => lowItem.HideDropDown();
+
         var menu = new ToolStripMenuItem("Notifications");
         menu.DropDownItems.Add(lowItem);
         menu.DropDownItems.Add(fullItem);
