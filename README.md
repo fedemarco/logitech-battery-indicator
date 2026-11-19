@@ -33,6 +33,12 @@ No .NET installation is needed: the app is a single self-contained `.exe` (about
 2. Move it to a permanent folder, for example `%LOCALAPPDATA%\LogitechBattery`. "Start with Windows" remembers this location.
 3. Run it. The battery icon appears in the tray (you may need to drag it out of the overflow area to keep it visible).
 
+To check the download, put the `LogitechBattery.exe.sha256` file of the same release (from version 0.8.0) next to the exe and run this in that folder. It prints `True` when the file is intact:
+
+```powershell
+(Get-FileHash .\LogitechBattery.exe).Hash -eq (Get-Content .\LogitechBattery.exe.sha256).Split(' ')[0]
+```
+
 The exe is not code-signed, so Windows SmartScreen may warn the first time. Click **More info → Run anyway**.
 
 To update, exit the app from the tray menu, replace the exe with the new version and start it again.
