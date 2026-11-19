@@ -13,9 +13,24 @@ public static class AppLog
     private const string ProfilePlaceholder = "%USERPROFILE%";
     private static readonly object Gate = new();
 
-    public static void Write(string message) => Write(message, AppPaths.DataDirectory);
+    public static void Info(string message, params (string Key, object? Value)[] fields) =>
+        Write(AppPaths.DataDirectory, LogLevel.Info, message, fields);
 
-    internal static void Write(string message, string directory)
+    public static void Warn(string message, params (string Key, object? Value)[] fields) =>
+        Write(AppPaths.DataDirectory, LogLevel.Warn, message, fields);
+
+    public static void Error(string message, params (string Key, object? Value)[] fields) =>
+        Write(AppPaths.DataDirectory, LogLevel.Error, message, fields);
+
+    /// <summary>Fields for a handled failure: the exception type and message.</summary>
+    public static (string Key, object? Value)[] Failure(Exception exception) =>
+        [("error", exception.GetType().Name), ("message", exception.Message)];
+
+    /// <summary>Fields for an unhandled failure: type, message and the full stack trace in one escaped value.</summary>
+    public static (string Key, object? Value)[] FailureWithStack(Exception exception) =>
+        [.. Failure(exception), ("stack", exception.ToString())];
+
+    internal static void Write(string directory, LogLevel level, string message, params (string Key, object? Value)[] fields)
     {
         lock (Gate)
         {
@@ -25,12 +40,16 @@ public static class AppLog
                 var file = Path.Combine(directory, FileName);
                 if (!RotateIfNeeded(file, directory))
                     return;
-                var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
-                File.AppendAllText(file, $"{timestamp}  {Redact(message)}{Environment.NewLine}");
+                var line = LogLine.Format(DateTimeOffset.Now, level, Redact(message), Redacted(fields));
+                File.AppendAllText(file, line + Environment.NewLine);
             }
             catch { /* logging must never break the app */ }
         }
     }
+
+    // Redacted before formatting: escaping doubles the backslashes of a Windows path, and then the profile folder no longer matches.
+    private static List<(string Key, object? Value)> Redacted((string Key, object? Value)[] fields) =>
+        fields.Select(field => (field.Key, (object?)Redact(Convert.ToString(field.Value, CultureInfo.InvariantCulture) ?? ""))).ToList();
 
     /// <summary>
     /// Replaces the user profile folder with %USERPROFILE%, so a log or report that is shared does not show the Windows user name.

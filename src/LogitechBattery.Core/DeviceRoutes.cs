@@ -110,7 +110,7 @@ internal sealed class DeviceRoutes
                 return SlotState.Occupied;
             case SlotProbe.NoUnifiedBattery skipped:
                 _slotsWithoutBattery.Add(slot);
-                AppLog.Write($"Skipping device: {skipped.DeviceName}, no Unified Battery");
+                AppLog.Warn("Skipping device", ("device", skipped.DeviceName), ("reason", "noUnifiedBattery"));
                 return SlotState.Occupied;
             default:
                 return SlotState.Empty;
@@ -126,7 +126,7 @@ internal sealed class DeviceRoutes
         }
         catch (Exception ex) when (ex is not (IOException or TimeoutException or OperationCanceledException))
         {
-            AppLog.Write($"Skipping device at {slot.ChannelKey} devIdx {slot.DeviceIndex:X2}: probing failed: {ex}");
+            AppLog.Warn("Skipping device", [("receiver", slot.ChannelKey), ("devIdx", $"{slot.DeviceIndex:X2}"), ("reason", "probingFailed"), .. AppLog.FailureWithStack(ex)]);
             _slotsWithoutBattery.Add(slot);
             return SlotProbe.NoDevice;
         }
@@ -150,8 +150,9 @@ internal sealed class DeviceRoutes
 
     private static void LogDeviceFound(BatteryTarget target)
     {
-        AppLog.Write($"Device found: {target.Device.Name}, PID {target.Channel.ProductId:X4}, devIdx {target.DeviceIndex:X2}, battery feature index {target.FeatureIndex:X2}");
+        AppLog.Info("Device found", ("device", target.Device.Name), ("pid", $"{target.Channel.ProductId:X4}"),
+            ("devIdx", $"{target.DeviceIndex:X2}"), ("featureIndex", $"{target.FeatureIndex:X2}"));
         if (target.Device.Id.IsRouteFallback)
-            AppLog.Write($"Device {target.Device.Name} has no unit ID; identity follows the slot");
+            AppLog.Info("Device has no unit ID, identity follows the slot", ("device", target.Device.Name));
     }
 }

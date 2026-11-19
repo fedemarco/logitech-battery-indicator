@@ -63,7 +63,7 @@ public sealed class DeviceHistories(string dataDirectory)
         }
         catch (Exception ex)
         {
-            AppLog.Write($"Clearing the history files failed: {ex.Message}");
+            AppLog.Warn("Clearing the history files failed", AppLog.Failure(ex));
             return false;
         }
     }
@@ -81,7 +81,7 @@ public sealed class DeviceHistories(string dataDirectory)
         }
         catch (Exception ex)
         {
-            AppLog.Write($"Moving the old history file failed, trying again at the next start: {ex.Message}");
+            AppLog.Warn("Moving the old history file failed, trying again at the next start", AppLog.Failure(ex));
         }
     }
 

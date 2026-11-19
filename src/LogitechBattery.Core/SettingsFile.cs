@@ -41,31 +41,31 @@ public sealed class SettingsFile(string path)
             if (!File.Exists(path))
                 return AppSettings.Default;
             if (new FileInfo(path).Length > MaxBytes)
-                return KeepFileAndUseDefaults("settings.ini is larger than 64 KB; using the defaults");
+                return KeepFileAndUseDefaults("Settings file is larger than 64 KB, using the defaults");
 
             var parsed = Parse(File.ReadAllLines(path));
             if (parsed.IsNewerVersion)
             {
                 // A newer version may add keys or allow other values, so its problems would only fill the log at every start.
-                AppLog.Write("Settings: settings.ini has an unknown version; reading only the values this version knows");
+                AppLog.Warn("Settings file has an unknown version, reading only the values this version knows");
                 _doNotOverwriteReason = NewerVersionReason;
             }
             else
             {
                 foreach (var problem in parsed.Problems)
-                    AppLog.Write($"Settings: {problem}");
+                    AppLog.Warn("Settings problem", ("problem", problem));
             }
             return parsed.Settings;
         }
         catch (Exception ex)
         {
-            return KeepFileAndUseDefaults($"settings.ini could not be read: {ex.Message}");
+            return KeepFileAndUseDefaults("Settings file could not be read, using the defaults", AppLog.Failure(ex));
         }
     }
 
-    private AppSettings KeepFileAndUseDefaults(string logMessage)
+    private AppSettings KeepFileAndUseDefaults(string logMessage, params (string Key, object? Value)[] fields)
     {
-        AppLog.Write($"Settings: {logMessage}");
+        AppLog.Warn(logMessage, fields);
         _doNotOverwriteReason = UnreadableReason;
         return AppSettings.Default;
     }
@@ -87,7 +87,7 @@ public sealed class SettingsFile(string path)
         }
         catch (Exception ex)
         {
-            AppLog.Write($"Settings: save failed: {ex.Message}");
+            AppLog.Warn("Settings save failed", AppLog.Failure(ex));
             return SaveFailedReason;
         }
         finally

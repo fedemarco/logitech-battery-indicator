@@ -162,7 +162,7 @@ public sealed class BatteryHistory(string path)
         }
         catch (Exception ex)
         {
-            AppLog.Write($"Battery history {operation} failed: {ex.Message}");
+            AppLog.Warn("Battery history operation failed", [("operation", operation), .. AppLog.Failure(ex)]);
             return fallback;
         }
     }

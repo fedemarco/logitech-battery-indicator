@@ -22,7 +22,7 @@ internal static class AutoStart
         }
         catch (Exception ex)
         {
-            AppLog.Write($"Reading start with Windows failed: {ex.Message}");
+            AppLog.Warn("Reading start with Windows failed", AppLog.Failure(ex));
             return false;
         }
     }
@@ -48,7 +48,7 @@ internal static class AutoStart
         {
             if (Command is not { } command)
             {
-                AppLog.Write("Enabling start with Windows failed: the path of the exe is unknown");
+                AppLog.Warn("Enabling start with Windows failed", ("reason", "exePathUnknown"));
                 return false;
             }
             using var runKey = Registry.CurrentUser.CreateSubKey(RunKey);
@@ -58,7 +58,7 @@ internal static class AutoStart
         }
         catch (Exception ex)
         {
-            AppLog.Write($"Enabling start with Windows failed: {ex.Message}");
+            AppLog.Warn("Enabling start with Windows failed", AppLog.Failure(ex));
             return false;
         }
     }
@@ -73,7 +73,7 @@ internal static class AutoStart
         }
         catch (Exception ex)
         {
-            AppLog.Write($"Clearing the Task Manager startup flag failed: {ex.Message}");
+            AppLog.Warn("Clearing the Task Manager startup flag failed", AppLog.Failure(ex));
         }
     }
 
@@ -88,7 +88,7 @@ internal static class AutoStart
         }
         catch (Exception ex)
         {
-            AppLog.Write($"Disabling start with Windows failed: {ex.Message}");
+            AppLog.Warn("Disabling start with Windows failed", AppLog.Failure(ex));
             return false;
         }
     }
@@ -109,7 +109,7 @@ internal static class AutoStart
         }
         catch (Exception ex)
         {
-            AppLog.Write($"First-run start with Windows failed: {ex.Message}");
+            AppLog.Warn("First-run start with Windows failed", AppLog.Failure(ex));
         }
     }
 }

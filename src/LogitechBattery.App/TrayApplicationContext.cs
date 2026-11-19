@@ -214,7 +214,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void SaveDeviceNames(IReadOnlyDictionary<DeviceId, string> names)
     {
-        SaveSettings(_settings with { DeviceNames = names }, AppLog.Write); // automatic save: no dialog
+        SaveSettings(_settings with { DeviceNames = names }, LogSettingsSaveProblem); // automatic save: no dialog
     }
 
     // The simulator keeps its tray choice in _mockTrayDevice and never writes settings.ini.
@@ -225,8 +225,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (TrayDeviceChoice.FirstPickToSave(_readings, _settings.TrayDevice) is not { } device)
             return;
 
-        SaveSettings(_settings with { TrayDevice = device }, AppLog.Write); // automatic save: no dialog
+        SaveSettings(_settings with { TrayDevice = device }, LogSettingsSaveProblem); // automatic save: no dialog
     }
+
+    private static void LogSettingsSaveProblem(string problem) => AppLog.Warn("Settings save failed", ("problem", problem));
 
     private void SaveSettings(AppSettings updated, Action<string> reportProblem)
     {
@@ -268,10 +270,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         switch (e.Mode)
         {
             case PowerModes.Suspend:
-                AppLog.Write("PC suspending");
+                AppLog.Info("PC suspending");
                 break;
             case PowerModes.Resume:
-                AppLog.Write("PC resumed");
+                AppLog.Info("PC resumed");
                 (_provider as HidPpBatteryProvider)?.ReopenDevices();
                 OnChangeDetected(); // reads again after 1 s, then follows up like after any change
                 break;
@@ -293,7 +295,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
         catch (Exception ex)
         {
-            AppLog.Write($"Follow-up read failed: {ex}"); // never escape an async void handler
+            AppLog.Error("Follow-up read failed", AppLog.FailureWithStack(ex)); // never escape an async void handler
         }
     }
 
@@ -310,7 +312,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (_refreshing || _exited)
         {
             if (_refreshing && _stuckReadWatch.ShouldReport(Environment.TickCount64))
-                AppLog.Write($"Battery read still running after {StuckReadAfter.TotalSeconds:0} s");
+                AppLog.Warn("Battery read still running", ("seconds", (int)StuckReadAfter.TotalSeconds));
             return (false, null);
         }
 
@@ -401,7 +403,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
         catch (Exception ex)
         {
-            AppLog.Write($"Tray update failed: {ex}"); // keep the previous icon
+            AppLog.Error("Tray update failed", AppLog.FailureWithStack(ex)); // keep the previous icon
         }
     }
 
@@ -434,7 +436,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
         catch (Exception ex)
         {
-            AppLog.Write($"Notifications failed: {ex}");
+            AppLog.Error("Notifications failed", AppLog.FailureWithStack(ex));
         }
     }
 
@@ -488,7 +490,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         var (title, text) = BatteryAlertText.For(deviceAlert.Alert, deviceAlert.Percent, deviceAlert.DeviceName);
         var icon = deviceAlert.Alert == BatteryAlert.Full ? ToolTipIcon.Info : ToolTipIcon.Warning;
-        AppLog.Write($"Notification: {title} ({deviceAlert.Percent}%)");
+        AppLog.Info("Notification", ("title", title), ("percent", deviceAlert.Percent));
         _notifyIcon.ShowBalloonTip(BalloonTimeoutMs, title, text, icon);
     }
 

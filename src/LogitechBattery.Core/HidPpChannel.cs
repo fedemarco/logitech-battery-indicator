@@ -58,7 +58,7 @@ internal sealed class HidPpChannel : IHidPpChannel, IDisposable
             if (shortCollection.TryOpen(out var opened))
                 shortStream = opened;
             else
-                AppLog.Write($"Cannot open the short collection of {device.Key}"); // the channel works without it, minus HID++ 1.0 requests
+                AppLog.Warn("Cannot open short collection", ("receiver", device.Key)); // the channel works without it, minus HID++ 1.0 requests
         }
 
         var channel = new HidPpChannel(device, longStream, shortStream, onReport);
@@ -139,7 +139,7 @@ internal sealed class HidPpChannel : IHidPpChannel, IDisposable
             }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException) { } // unplugged or disposed
-        catch (Exception ex) { AppLog.Write($"HID++ reader stopped: {ex}"); }
+        catch (Exception ex) { AppLog.Error("HID++ reader stopped", AppLog.FailureWithStack(ex)); }
         finally
         {
             _closed = true;
@@ -150,7 +150,7 @@ internal sealed class HidPpChannel : IHidPpChannel, IDisposable
     {
         // The handler runs first, so a log written there precedes whatever the waiting request logs next.
         try { _onReport(this, report); }
-        catch (Exception ex) { AppLog.Write($"HID++ report handler failed: {ex}"); } // a faulty handler must not stop the reader
+        catch (Exception ex) { AppLog.Error("HID++ report handler failed", AppLog.FailureWithStack(ex)); } // a faulty handler must not stop the reader
         if (_pending is { } pending && HidPpMessage.Classify(pending.Request, report).Kind != HidPpReplyKind.None)
             pending.Reply.TrySetResult(report);
     }

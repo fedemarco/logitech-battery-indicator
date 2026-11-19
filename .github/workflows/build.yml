@@ -59,8 +59,8 @@ jobs:
           if ($privateMb -gt [double]$env:MAX_PRIVATE_MB) { throw "Memory gate: private bytes $privateMb MB are above the limit of $env:MAX_PRIVATE_MB MB" }
           if ($threads -gt [int]$env:MAX_THREADS) { throw "Memory gate: $threads threads are above the limit of $env:MAX_THREADS" }
           if ($crashes) { throw "Windows logged an error: $($crashes[0].Message)" }
-          if ($lines.Count -eq 0 -or $lines[0] -notmatch '  Started LogitechBattery \S+ \(mock\)$') { throw 'No start line in the log' }
-          $unexpected = @($lines | Select-Object -Skip 1 | Where-Object { $_ -notmatch '  Notification: ' })
+          if ($lines.Count -eq 0 -or $lines[0] -notmatch '^\S+ INFO  Started LogitechBattery version=\S+ mode=mock$') { throw 'No start line in the log' }
+          $unexpected = @($lines | Select-Object -Skip 1 | Where-Object { $_ -notmatch ' INFO  Notification ' })
           if ($unexpected) { throw "Unexpected log lines:`n$($unexpected -join "`n")" }
 
   # Pushes to main / manual runs: unversioned dev build (<VersionPrefix>-dev.<run>+<sha>).

@@ -22,11 +22,11 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-        Application.ThreadException += (_, e) => AppLog.Write($"Unhandled UI exception: {e.Exception}"); // keep the tray app running
+        Application.ThreadException += (_, e) => AppLog.Error("Unhandled UI exception", AppLog.FailureWithStack(e.Exception)); // keep the tray app running
         var useMock = args.Contains(MockFlag);
         var version = AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()) ?? "unknown";
         var mode = useMock ? "mock" : "HID++";
-        AppLog.Write($"Started LogitechBattery {version} ({mode})");
+        AppLog.Info("Started LogitechBattery", ("version", version), ("mode", mode));
         Application.Run(CreateTrayContext(useMock));
     }
 
@@ -42,7 +42,7 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            AppLog.Write($"Startup failed: {ex}");
+            AppLog.Error("Startup failed", AppLog.FailureWithStack(ex));
             throw;
         }
     }

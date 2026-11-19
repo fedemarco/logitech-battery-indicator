@@ -48,7 +48,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
 
     private void OnUsbDevicesChanged(object? sender, DeviceListChangedEventArgs e)
     {
-        AppLog.Write("USB devices changed");
+        AppLog.Info("USB devices changed");
         _rediscover = true; // the best route may have changed (cable preferred over receiver)
         _forgetSkippedSlots = true; // a device may have been paired into a skipped slot
         ChangeDetected?.Invoke();
@@ -58,14 +58,22 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     {
         if (ReceiverNotifications.ReadConnection(report) is { } connection)
         {
-            AppLog.Write(connection.LinkEstablished ? "Device link up" : "Device link down");
+            AppLog.Info(connection.LinkEstablished ? "Link up" : "Link down", LinkFields(channel, connection.DeviceIndex));
             ChangeDetected?.Invoke();
         }
         else if (_routes.IsBatteryEventSource(channel, report))
         {
-            AppLog.Write("Battery event");
+            AppLog.Info("Battery event");
             ChangeDetected?.Invoke();
         }
+    }
+
+    // Runs on a reader thread: the device name comes only from the routes (immutable array), never from KnownDevices.
+    private (string Key, object? Value)[] LinkFields(HidPpChannel channel, byte deviceIndex)
+    {
+        var route = _routes.All.FirstOrDefault(candidate => candidate.Channel == channel && candidate.DeviceIndex == deviceIndex);
+        (string Key, object? Value) devIdx = ("devIdx", $"{deviceIndex:X2}"), receiver = ("receiver", channel.Key);
+        return route is null ? [receiver, devIdx] : [receiver, devIdx, ("device", route.Device.Name)];
     }
 
     private IReadOnlyList<DeviceReading> Read(CancellationToken cancellationToken)
@@ -82,7 +90,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
             }
             catch (Exception ex)
             {
-                AppLog.Write($"Battery read failed: {ex}");
+                AppLog.Error("Battery read failed", AppLog.FailureWithStack(ex));
                 throw;
             }
         }
@@ -176,7 +184,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         {
             // one faulty device must not fail the reading of the others
             // shortcut: logged at every poll while the device keeps failing (bounded by log rotation); log once per device if a real device ever does this
-            AppLog.Write($"getStatus of {route.Device.Name} failed: {ex.GetType().Name}: {ex.Message}");
+            AppLog.Warn("getStatus failed", [("device", route.Device.Name), .. AppLog.Failure(ex)]);
             return new RouteRead(RouteOutcome.Failed);
         }
     }
@@ -186,7 +194,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         if (answer.ErrorCode is { } errorCode)
         {
             // The device answered with an error: not asleep.
-            AppLog.Write($"getStatus failed with HID++ 2.0 error 0x{errorCode:X2} ({route.Device.Name})");
+            AppLog.Warn("getStatus returned an error", ("device", route.Device.Name), ("errorCode", $"0x{errorCode:X2}"));
             return new RouteRead(RouteOutcome.Failed);
         }
         if (answer.Response is not { } response)
@@ -198,7 +206,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         }
         catch (FormatException ex)
         {
-            AppLog.Write($"getStatus answer of {route.Device.Name} is malformed: {ex.Message}");
+            AppLog.Warn("getStatus answer is malformed", [("device", route.Device.Name), .. AppLog.Failure(ex)]);
             return new RouteRead(RouteOutcome.Failed);
         }
     }
@@ -234,7 +242,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
 
     private void Lost(IHidPpChannel lostChannel)
     {
-        AppLog.Write($"Device lost: {lostChannel.Key}");
+        AppLog.Info("Device lost", ("receiver", lostChannel.Key));
         if (lostChannel is HidPpChannel channel) // discovery and routes know only the interface; every channel they get is one of ours
         {
             channel.Dispose();
@@ -269,7 +277,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         if (_lastStates.TryGetValue(device.Id, out var lastState) && lastState == state)
             return;
         _lastStates[device.Id] = state;
-        AppLog.Write($"Connection: {device.Name} {state}");
+        AppLog.Info("Connection", ("device", device.Name), ("state", state));
     }
 
     private void RefreshChannels(CancellationToken cancellationToken)
@@ -304,7 +312,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     {
         _rediscover = true;
         if (_devicesFailedToOpen.Add(device.Key))
-            AppLog.Write($"Cannot open {device.Key}");
+            AppLog.Warn("Cannot open", ("receiver", device.Key));
     }
 
     /// <summary>
@@ -324,11 +332,14 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
 
             var write = HidPpMessage.BuildSetRegister(HidPpMessage.ReceiverIndex, ReceiverNotifications.FlagsRegister, updatedFlags);
             var written = channel.Exchange(write, DeviceDiscovery.Timeout, cancellationToken);
-            AppLog.Write(written.Response is null ? "Receiver: enabling wireless notifications failed" : "Receiver: wireless notifications enabled");
+            if (written.Response is null)
+                AppLog.Warn("Receiver notifications failed");
+            else
+                AppLog.Info("Receiver notifications enabled");
         }
         catch (Exception ex) when (ex is IOException or TimeoutException)
         {
-            AppLog.Write($"Receiver: enabling wireless notifications failed: {ex.Message}");
+            AppLog.Warn("Receiver notifications failed", AppLog.Failure(ex));
         }
     }
 }

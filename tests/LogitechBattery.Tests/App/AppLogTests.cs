@@ -9,7 +9,8 @@ public sealed class AppLogTests : IDisposable
     private string LogPath => _folder.FileNamed("log.txt");
     private string OldLogPath => _folder.FileNamed("log.old.txt");
 
-    private void Write(string message) => AppLog.Write(message, _folder.Path);
+    private void Write(string message, params (string Key, object? Value)[] fields) =>
+        AppLog.Write(_folder.Path, LogLevel.Info, message, fields);
 
     private void CreateLogOfSize(long bytes) => CreateFileOfSize(LogPath, bytes);
 
@@ -28,11 +29,13 @@ public sealed class AppLogTests : IDisposable
         Assert.StartsWith(Path.GetTempPath(), AppPaths.DataDirectory);
 
     [Fact]
-    public void Write_appends_a_timestamped_line()
+    public void Write_appends_a_timestamped_line_with_level_message_and_fields()
     {
-        Write("hello");
+        Write("hello", ("key", "value"));
 
-        Assert.Matches($@"^\d{{4}}-\d\d-\d\d \d\d:\d\d:\d\d  hello{Environment.NewLine}$", File.ReadAllText(LogPath));
+        Assert.Matches(
+            $@"^\d{{4}}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{{3}}[+-]\d\d:\d\d INFO  hello key=value{Environment.NewLine}$",
+            File.ReadAllText(LogPath));
     }
 
     [Fact]
@@ -104,7 +107,7 @@ public sealed class AppLogTests : IDisposable
     {
         var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
-        Write($"Access to {Path.Combine(profile, "history.csv")} is denied");
+        Write("Access denied", ("path", Path.Combine(profile, "history.csv")));
 
         var line = File.ReadAllText(LogPath);
         Assert.DoesNotContain(profile, line);
