@@ -51,4 +51,26 @@ public class TrayDeviceChoiceTests
     [Fact]
     public void Without_a_saved_device_and_without_readings_nothing_is_chosen() =>
         Assert.Null(TrayDeviceChoice.Pick([], saved: null, NoNames, Now));
+
+    [Fact]
+    public void Without_a_saved_device_the_first_real_device_is_saved()
+    {
+        var placeholder = new DeviceReading(DeviceInfo.NoDeviceYet, null);
+
+        var toSave = TrayDeviceChoice.FirstPickToSave([placeholder, Reading(MouseId, "PRO X2"), Reading(KeyboardId, "G915")], saved: null);
+
+        Assert.Equal(MouseId, toSave);
+    }
+
+    [Fact]
+    public void Nothing_is_saved_when_a_device_is_already_saved() =>
+        Assert.Null(TrayDeviceChoice.FirstPickToSave([Reading(MouseId, "PRO X2")], saved: KeyboardId));
+
+    [Fact]
+    public void Nothing_is_saved_when_the_only_reading_is_the_placeholder() =>
+        Assert.Null(TrayDeviceChoice.FirstPickToSave([new DeviceReading(DeviceInfo.NoDeviceYet, null)], saved: null));
+
+    [Fact]
+    public void Nothing_is_saved_without_readings() =>
+        Assert.Null(TrayDeviceChoice.FirstPickToSave([], saved: null));
 }

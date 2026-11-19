@@ -223,6 +223,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
             AppLog.Write(problem); // automatic save: no dialog
     }
 
+    // The simulator keeps its tray choice in _mockTrayDevice and never writes settings.ini.
+    private void SaveFirstTrayDevice()
+    {
+        if (_isSimulator)
+            return;
+        if (TrayDeviceChoice.FirstPickToSave(_readings, _settings.TrayDevice) is not { } device)
+            return;
+
+        _settings = _settings with { TrayDevice = device }; // applies for this session even when the save fails
+        if (_settingsFile.Save(_settings) is { } problem)
+            AppLog.Write(problem); // automatic save: no dialog
+    }
+
     private static void ShowWarning(string message) =>
         MessageBox.Show(message, AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
@@ -327,6 +340,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var trayHistoryGotLine = RecordReadings(devices.Tray.Device);
         ShowTrayDevice(devices, trayHistoryGotLine);
         NotifyAlerts();
+        SaveFirstTrayDevice();
         return (true, _devices?.Tray.Status);
     }
 

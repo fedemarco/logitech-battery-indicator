@@ -19,6 +19,18 @@ public static class TrayDeviceChoice
         return readings.FirstOrDefault(reading => reading.Device.Id == saved) ?? NotFound(saved, savedNames, now);
     }
 
+    /// <summary>
+    /// The device to save as the tray device: the first real device, when none is saved yet. Saving it keeps the tray from
+    /// switching by itself to another device in a later session, when the devices are read in another order. Null otherwise.
+    /// </summary>
+    public static DeviceId? FirstPickToSave(IReadOnlyList<DeviceReading> readings, DeviceId? saved)
+    {
+        if (saved is not null)
+            return null;
+
+        return readings.FirstOrDefault(reading => reading.Device.Id != DeviceInfo.NoDeviceYet.Id)?.Device.Id;
+    }
+
     private static DeviceReading NotFound(DeviceId id, IReadOnlyDictionary<DeviceId, string> savedNames, DateTimeOffset now)
     {
         var name = savedNames.GetValueOrDefault(id, string.Empty);
