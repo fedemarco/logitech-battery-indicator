@@ -40,6 +40,20 @@ public class TrayDeviceChoiceTests
         Assert.Equal(string.Empty, chosen!.Device.Name);
     }
 
+    [Theory]
+    [InlineData(ConnectionState.Asleep)]
+    [InlineData(ConnectionState.NotFound)]
+    public void While_no_device_is_known_the_saved_device_takes_the_receiver_state_with_its_saved_name(ConnectionState receiverState)
+    {
+        var placeholder = new DeviceReading(DeviceInfo.NoDeviceYet, TestData.Status(percent: null, connection: receiverState));
+        var names = new Dictionary<DeviceId, string> { [MouseId] = "PRO X2" };
+
+        var chosen = TrayDeviceChoice.Pick([placeholder], MouseId, names, Now);
+
+        Assert.Equal("PRO X2", chosen!.Device.Name);
+        Assert.Equal(receiverState, chosen.Status!.Connection);
+    }
+
     [Fact]
     public void Without_a_saved_device_the_first_device_is_chosen()
     {

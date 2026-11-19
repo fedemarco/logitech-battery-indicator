@@ -4,8 +4,9 @@ namespace LogitechBattery.Battery;
 public static class TrayDeviceChoice
 {
     /// <summary>
-    /// The saved device when it was read; a not-found entry for it when it was not (the tray never switches to another device
-    /// by itself); the first device when none is saved. Null when there is nothing to show.
+    /// The saved device when it was read; an entry for it when it was not (the tray never switches to another device by itself),
+    /// asleep while no device is known yet but a receiver is open, not found otherwise; the first device when none is saved.
+    /// Null when there is nothing to show.
     /// </summary>
     public static DeviceReading? Pick(
         IReadOnlyList<DeviceReading> readings,
@@ -16,7 +17,8 @@ public static class TrayDeviceChoice
         if (saved is null)
             return readings.FirstOrDefault();
 
-        return readings.FirstOrDefault(reading => reading.Device.Id == saved) ?? NotFound(saved, savedNames, now);
+        var savedReading = readings.FirstOrDefault(reading => reading.Device.Id == saved);
+        return savedReading ?? NotRead(saved, savedNames, StateWhileNoDeviceIsKnown(readings), now);
     }
 
     /// <summary>
@@ -31,9 +33,14 @@ public static class TrayDeviceChoice
         return readings.FirstOrDefault(reading => reading.Device.Id != DeviceInfo.NoDeviceYet.Id)?.Device.Id;
     }
 
-    private static DeviceReading NotFound(DeviceId id, IReadOnlyDictionary<DeviceId, string> savedNames, DateTimeOffset now)
+    // The placeholder carries the receiver state (Asleep when a receiver is open) while no device answered yet, for example
+    // when the mouse sleeps at app start. Once any device is known, a saved device that was not read is not found.
+    private static ConnectionState StateWhileNoDeviceIsKnown(IReadOnlyList<DeviceReading> readings) =>
+        readings.FirstOrDefault(reading => reading.Device.Id == DeviceInfo.NoDeviceYet.Id)?.Status?.Connection ?? ConnectionState.NotFound;
+
+    private static DeviceReading NotRead(DeviceId id, IReadOnlyDictionary<DeviceId, string> savedNames, ConnectionState state, DateTimeOffset now)
     {
         var name = savedNames.GetValueOrDefault(id, string.Empty);
-        return new DeviceReading(new DeviceInfo(id, name), new BatteryStatus(ConnectionState.NotFound, null, ChargingState.Unknown, now));
+        return new DeviceReading(new DeviceInfo(id, name), new BatteryStatus(state, null, ChargingState.Unknown, now));
     }
 }
