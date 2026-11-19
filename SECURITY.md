@@ -15,9 +15,10 @@ This is a hobby project. I answer on a best-effort basis, usually within 14 days
 - A crafted USB or HID device, or a HID++ report, that crashes the app or does more than that.
 - A file written outside `%LOCALAPPDATA%\LogitechBattery`.
 - A damaged history file or `settings.ini` that does harm.
+- A crafted answer to the update check (a rogue server, a proxy or a captive portal) that crashes the app, or makes it open a URL outside the release pages of this repository.
 
 ## Facts that help a report
 
 - The app needs no administrator rights.
 - It reads only the Logitech vendor HID++ collections, not keyboard or mouse input.
-- It has no network code. It never connects to the internet.
+- Its only network request is the update check to `api.github.com`. It runs only when the user turns on "New app versions" or clicks "Check for updates…". The app downloads nothing and updates nothing: it can only open a release page in the browser.

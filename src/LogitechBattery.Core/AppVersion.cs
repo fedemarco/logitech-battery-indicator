@@ -27,4 +27,17 @@ public static class AppVersion
             ? informationalVersion[..Math.Min(informationalVersion.Length, plus + 1 + ShortShaLength)]
             : informationalVersion[..plus];
     }
+
+    /// <summary>
+    /// The X.Y.Z part of an informational version, without the prerelease and build parts, so "0.8.0-dev.3+abc" counts as 0.8.0.
+    /// Null when it is missing or does not have exactly three numeric parts.
+    /// </summary>
+    public static Version? ReleaseVersionOf(string? informationalVersion)
+    {
+        var numberEnd = informationalVersion?.IndexOfAny(['-', '+']) ?? -1;
+        var numbers = numberEnd < 0 ? informationalVersion : informationalVersion![..numberEnd];
+        return Version.TryParse(numbers, out var version) && HasThreeParts(version) ? version : null;
+    }
+
+    private static bool HasThreeParts(Version version) => version.Build >= 0 && version.Revision < 0;
 }

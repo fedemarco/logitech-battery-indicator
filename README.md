@@ -16,7 +16,8 @@ The tray icon shows the charge at a glance; hover it for the exact percentage. T
 - **Start with Windows** – on by default, can be switched off in the tray menu. No admin rights needed.
 - **History panel** – left-click the tray icon for a 24 h / 7 day graph of the battery level and the time of the last charge.
 - **Time left** – an estimate of the hours left, based on how fast the battery drained over the last week.
-- **Lightweight and private** – no installer, no background service, no account, no telemetry and no network access. Everything stays on your PC.
+- **Update notifications** – off by default. When you turn on "New app versions" in the Notifications menu, the app checks about 2 minutes after each start and then once a day while it runs, and tells you when a newer release exists. It never downloads or installs anything: a click opens the download page. **Check for updates…** in the tray menu checks once, when you ask.
+- **Lightweight and private** – no installer, no background service, no account, no telemetry and no network access unless you turn on update notifications or choose Check for updates. Everything stays on your PC.
 
 ![History panel: current battery level, last charge, and a 24-hour graph of the battery level](docs/history-panel.png)
 
@@ -41,7 +42,7 @@ To check the download, put the `LogitechBattery.exe.sha256` file of the same rel
 
 The exe is not code-signed, so Windows SmartScreen may warn the first time. Click **More info → Run anyway**.
 
-To update, exit the app from the tray menu, replace the exe with the new version and start it again.
+To update, exit the app from the tray menu, replace the exe with the new version and start it again. The app can tell you when a new version exists (see Features), but it does not update itself.
 
 What's new: see the [releases](https://github.com/fedemarco/logitech-battery-indicator/releases).
 
@@ -51,7 +52,7 @@ What's new: see the [releases](https://github.com/fedemarco/logitech-battery-ind
 |---|---|
 | Hover the tray icon | Status, exact percentage, time left and app version |
 | Left-click the tray icon | Opens the history panel; Esc or a click elsewhere closes it |
-| Right-click the tray icon | Menu: Show in tray (only when more than one device is connected, or the device in the tray is off: choose which device the icon shows), Notifications (low battery level, fully charged), Start with Windows, Clear history…, Exit |
+| Right-click the tray icon | Menu: Show in tray (only when more than one device is connected, or the device in the tray is off: choose which device the icon shows), Notifications (low battery level, fully charged, new app versions), Check for updates…, Start with Windows, Clear history…, Exit |
 
 Icon colors: green from 40 %, yellow from 20 %, red below 20 %. A separate "unknown" icon means the mouse is asleep, switched off or not found.
 
@@ -59,12 +60,12 @@ Icon colors: green from 40 %, yellow from 20 %, red below 20 %. A separate "unkn
 
 ## Privacy and data
 
-No telemetry. The app sends no data to any server and never connects to the internet. It only stores:
+No telemetry. The app sends no data to any server and makes no network request unless you turn on "New app versions" (Notifications menu) or click **Check for updates…**. Then it makes one request, to `api.github.com`, to read the latest release of this project (with the automatic check on: one request about 2 minutes after each start and then once a day while the app runs, plus one for each click on **Check for updates…**). GitHub sees your IP address, the time and the User-Agent `LogitechBattery`. Nothing else is sent, and the app never downloads or installs anything: it only opens the release page in your browser when you click. It stores:
 
 - `%LOCALAPPDATA%\LogitechBattery\log.txt` and `log.old.txt` – a small diagnostic log (rotated, at most about 512 KB): one line per event with the time, a level (`INFO`, `WARN`, `ERROR`) and `key=value` fields such as the device name and a short receiver id. Paths under your user folder are shown as `%USERPROFILE%`.
 - `%LOCALAPPDATA%\LogitechBattery\probe.txt` and `listen.txt` – the reports of `--probe` and `--listen`, only when you run those options.
 - `%LOCALAPPDATA%\LogitechBattery\history\` – the battery history behind the graph and the time-left estimate, one CSV file per device (kept for one year; **Clear history…** deletes them).
-- `%LOCALAPPDATA%\LogitechBattery\settings.ini` – your notification settings, written only when you change one. The app reads it at startup, so exit the app before you edit it by hand.
+- `%LOCALAPPDATA%\LogitechBattery\settings.ini` – your notification settings (including whether to check for updates), written only when you change one. The app reads it at startup, so exit the app before you edit it by hand.
 - `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` – the "Start with Windows" entry, only while that option is on.
 - `HKCU\Software\LogitechBattery` – remembers that the first-run "Start with Windows" default was applied.
 - `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run` – the app only removes its own "disabled" mark here when you turn "Start with Windows" on again after turning it off in Task Manager.
@@ -101,7 +102,7 @@ Not tested yet: running at the same time as Logitech G HUB or Logi Options+.
 
 ## Roadmap
 
-- Automatic updates.
+- Installing updates from inside the app.
 
 ## Building from source
 

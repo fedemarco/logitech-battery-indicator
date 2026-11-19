@@ -73,11 +73,12 @@ public sealed class SettingsFileTests : IDisposable
         Assert.Equal(
             [
                 "# Logitech Battery settings. Exit the app before you edit this file: it reads the file only at startup.",
-                "# lowAlertPercent: one of 10, 15, 20. fullChargeAlert: true or false.",
+                "# lowAlertPercent: one of 10, 15, 20. fullChargeAlert and checkForUpdates: true or false.",
                 "# The trayDevice and device lines are written by the app.",
                 "version=2",
                 "lowAlertPercent=20",
                 "fullChargeAlert=false",
+                "checkForUpdates=false",
                 "trayDevice=A1B2C3D4",
                 "device.0A0B0C0D.name=Dock",
                 "device.A1B2C3D4.name=PRO X2",
@@ -226,6 +227,35 @@ public sealed class SettingsFileTests : IDisposable
 
         Assert.Equal(new AlertSettings(LowPercent: 20, AlertSettings.Default.FullChargeAlert), parsed.Settings.Alerts);
         Assert.Single(parsed.Problems);
+    }
+
+    [Fact]
+    public void Check_for_updates_loads_back_unchanged()
+    {
+        CreateSettingsFile().Save(NonDefault with { CheckForUpdates = true });
+
+        Assert.True(CreateSettingsFile().Load().CheckForUpdates);
+    }
+
+    [Fact]
+    public void A_missing_check_for_updates_key_means_off()
+    {
+        var parsed = Parse("lowAlertPercent=20");
+
+        Assert.False(parsed.Settings.CheckForUpdates);
+        Assert.Empty(parsed.Problems);
+    }
+
+    [Theory]
+    [InlineData("yes")]
+    [InlineData("1")]
+    [InlineData("")]
+    public void A_bad_check_for_updates_value_means_off_with_one_problem(string badValue)
+    {
+        var parsed = Parse($"checkForUpdates={badValue}");
+
+        Assert.False(parsed.Settings.CheckForUpdates);
+        Assert.Contains("checkForUpdates", Assert.Single(parsed.Problems));
     }
 
     [Fact]

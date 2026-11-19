@@ -14,6 +14,9 @@ public sealed class SettingsFile(string path)
     private const string VersionKey = "version";
     private const string LowPercentKey = "lowAlertPercent";
     private const string FullChargeAlertKey = "fullChargeAlert";
+    // Added without a version bump on purpose: 0.7.x drops an unknown key at its next save, which turns the check off again (the safe default).
+    // A bump would make 0.7.x refuse to save any setting.
+    private const string CheckForUpdatesKey = "checkForUpdates";
     private const int MaxQuotedCharacters = 40;
     private const int MaxNameCharacters = 64;
     private const string TrayDeviceKey = "trayDevice";
@@ -29,7 +32,7 @@ public sealed class SettingsFile(string path)
 
     // Version 1 has no device keys, so it reads as a version 2 file without them.
     private static readonly string[] ReadableVersions = ["1", CurrentVersion];
-    private static readonly string[] KnownKeys = [VersionKey, LowPercentKey, FullChargeAlertKey, TrayDeviceKey];
+    private static readonly string[] KnownKeys = [VersionKey, LowPercentKey, FullChargeAlertKey, CheckForUpdatesKey, TrayDeviceKey];
 
     // The file may hold values this version cannot read or does not know, so a save would lose them.
     private string? _doNotOverwriteReason;
@@ -122,11 +125,12 @@ public sealed class SettingsFile(string path)
     private static IEnumerable<string> FormatLines(AppSettings settings)
     {
         yield return "# Logitech Battery settings. Exit the app before you edit this file: it reads the file only at startup.";
-        yield return $"# {LowPercentKey}: one of {ChoicesText}. {FullChargeAlertKey}: true or false.";
+        yield return $"# {LowPercentKey}: one of {ChoicesText}. {FullChargeAlertKey} and {CheckForUpdatesKey}: true or false.";
         yield return "# The trayDevice and device lines are written by the app.";
         yield return $"{VersionKey}={CurrentVersion}";
         yield return $"{LowPercentKey}={settings.Alerts.LowPercent.ToString(CultureInfo.InvariantCulture)}";
-        yield return $"{FullChargeAlertKey}={(settings.Alerts.FullChargeAlert ? "true" : "false")}";
+        yield return $"{FullChargeAlertKey}={FormatBool(settings.Alerts.FullChargeAlert)}";
+        yield return $"{CheckForUpdatesKey}={FormatBool(settings.CheckForUpdates)}";
         if (settings.TrayDevice is not null)
             yield return $"{TrayDeviceKey}={settings.TrayDevice}";
 
@@ -138,6 +142,8 @@ public sealed class SettingsFile(string path)
         }
         yield return "";
     }
+
+    private static string FormatBool(bool value) => value ? "true" : "false";
 
     /// <summary>A name must never add a line or break the format: no control characters (CR and LF included), at most 64 characters.</summary>
     internal static string CleanName(string name) => DeviceNames.Clean(name, MaxNameCharacters);
@@ -151,8 +157,9 @@ public sealed class SettingsFile(string path)
         var isNewerVersion = values.TryGetValue(VersionKey, out var version) && !ReadableVersions.Contains(version);
         var alerts = new AlertSettings(
             LowPercentFrom(values, problems),
-            FullChargeAlertFrom(values, problems));
-        var settings = new AppSettings(alerts, TrayDeviceFrom(values, problems), deviceNames);
+            BoolFrom(values, problems, FullChargeAlertKey, AlertSettings.Default.FullChargeAlert));
+        var checkForUpdates = BoolFrom(values, problems, CheckForUpdatesKey, AppSettings.Default.CheckForUpdates);
+        var settings = new AppSettings(alerts, TrayDeviceFrom(values, problems), deviceNames, checkForUpdates);
         return new ParsedSettings(settings, isNewerVersion, problems);
     }
 
@@ -228,15 +235,14 @@ public sealed class SettingsFile(string path)
         return fallback;
     }
 
-    private static bool FullChargeAlertFrom(Dictionary<string, string> values, List<string> problems)
+    private static bool BoolFrom(Dictionary<string, string> values, List<string> problems, string key, bool fallback)
     {
-        var fallback = AlertSettings.Default.FullChargeAlert;
-        if (!values.TryGetValue(FullChargeAlertKey, out var text))
+        if (!values.TryGetValue(key, out var text))
             return fallback;
 
         if (bool.TryParse(text, out var enabled))
             return enabled;
-        problems.Add($"{FullChargeAlertKey}={Quote(text)} is not true or false; using {fallback.ToString().ToLowerInvariant()}");
+        problems.Add($"{key}={Quote(text)} is not true or false; using {FormatBool(fallback)}");
         return fallback;
     }
 

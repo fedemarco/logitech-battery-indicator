@@ -22,10 +22,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private const int MockPollIntervalMs = 1000;
     private const int PollIntervalMs = 60_000;
     private const int BalloonTimeoutMs = 10_000;
-    private const string AppName = "Logitech Battery";
+    internal const string AppName = "Logitech Battery";
     private static readonly TimeSpan StuckReadAfter = TimeSpan.FromSeconds(60);
 
-    private readonly string _displayVersion = AppVersion.Display(AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()));
+    private readonly string? _informationalVersion = AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly());
+    private readonly string _displayVersion;
     private readonly IBatteryProvider _provider;
     private readonly DeviceHistories? _histories;
     private BatteryHistory? _history; // of the tray device: the drain rate and the overlay follow it
@@ -40,6 +41,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly NotifyIcon _notifyIcon;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly System.Windows.Forms.Timer _followUp = new();
+    private readonly UpdateNotifier _updateNotifier;
     private volatile SynchronizationContext? _ui;
 
     private Icon? _icon;
@@ -56,6 +58,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     public TrayApplicationContext(IBatteryProvider provider, DeviceHistories? histories, SettingsFile settingsFile)
     {
+        _displayVersion = AppVersion.Display(_informationalVersion);
         _provider = provider;
         _histories = histories;
         _settingsFile = settingsFile;
@@ -65,6 +68,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _ui = ui; // otherwise captured on the first idle
 
         _isSimulator = provider is MockBatteryProvider;
+        _updateNotifier = new UpdateNotifier(_informationalVersion, () => _settings.CheckForUpdates, _isSimulator, ShowUpdateBalloon);
         if (!_isSimulator)
             AutoStart.EnableOnFirstRun();
 
@@ -77,9 +81,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
 
         _notifyIcon.MouseClick += OnTrayClick;
+        _notifyIcon.BalloonTipClicked += (_, _) => _updateNotifier.OnBalloonClicked(); // raised for every balloon
 
         _timer = StartPollTimer(_isSimulator ? MockPollIntervalMs : PollIntervalMs);
         _followUp.Tick += OnFollowUpTickAsync;
+        _updateNotifier.ApplySetting();
         if (provider is HidPpBatteryProvider hid)
         {
             hid.ChangeDetected += OnChangeDetected;
@@ -97,14 +103,16 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             menu.Items.Add(BuildSimulatorMenu(mock));
             menu.Items.Add(_showInTrayMenu.Item);
-            menu.Items.Add(NotificationsMenu.Build(() => _settings.Alerts, ApplyAlertSettings));
+            menu.Items.Add(BuildNotificationsMenu());
             menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(_updateNotifier.BuildCheckItem());
         }
         else
         {
             menu.Items.Add(_showInTrayMenu.Item);
-            menu.Items.Add(NotificationsMenu.Build(() => _settings.Alerts, ApplyAlertSettings));
+            menu.Items.Add(BuildNotificationsMenu());
             menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(_updateNotifier.BuildCheckItem());
             var startItem = BuildStartupItem();
             menu.Opening += (_, _) => startItem.Checked = AutoStart.IsEnabled();
             menu.Items.Add(startItem);
@@ -114,6 +122,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add("Exit", null, (_, _) => ExitApp());
         return menu;
     }
+
+    private ToolStripMenuItem BuildNotificationsMenu() =>
+        NotificationsMenu.Build(() => _settings.Alerts, ApplyAlertSettings, () => _settings.CheckForUpdates, ToggleCheckForUpdates);
 
     private ToolStripMenuItem BuildSimulatorMenu(MockBatteryProvider mock)
     {
@@ -201,6 +212,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _ = RefreshAsync(); // a new level is checked against the current battery at once
     }
 
+    private void ToggleCheckForUpdates()
+    {
+        SaveSettings(_settings with { CheckForUpdates = !_settings.CheckForUpdates }, ShowWarning);
+        _updateNotifier.ApplySetting();
+    }
+
     private void ChooseTrayDevice(DeviceId device)
     {
         if (_isSimulator)
@@ -237,7 +254,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             reportProblem(problem);
     }
 
-    private static void ShowWarning(string message) =>
+    internal static void ShowWarning(string message) =>
         MessageBox.Show(message, AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
     private System.Windows.Forms.Timer StartPollTimer(int intervalMs)
@@ -486,11 +503,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
         oldIcon?.Dispose();
     }
 
+    private void ShowUpdateBalloon(string title, string text) =>
+        _notifyIcon.ShowBalloonTip(BalloonTimeoutMs, title, text, ToolTipIcon.Info);
+
     private void ShowAlert(DeviceAlert deviceAlert)
     {
         var (title, text) = BatteryAlertText.For(deviceAlert.Alert, deviceAlert.Percent, deviceAlert.DeviceName);
         var icon = deviceAlert.Alert == BatteryAlert.Full ? ToolTipIcon.Info : ToolTipIcon.Warning;
         AppLog.Info("Notification", ("title", title), ("percent", deviceAlert.Percent));
+        _updateNotifier.OnOtherBalloonShown();
         _notifyIcon.ShowBalloonTip(BalloonTimeoutMs, title, text, icon);
     }
 
@@ -520,6 +541,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _timer.Dispose();
         _followUp.Stop();
         _followUp.Dispose();
+        _updateNotifier.Dispose();
         _notifyIcon.Visible = false; // hide first to avoid a ghost icon
         _notifyIcon.Dispose();
         _icon?.Dispose();
