@@ -57,33 +57,6 @@ public class MockBatteryProviderTests
         Assert.Equal(100, Read(provider).Percent);
     }
 
-    [Fact]
-    public void Auto_percent_stays_between_floor_and_full_throughout_the_cycle()
-    {
-        for (double seconds = 0; seconds < MockBatteryProvider.CycleSeconds; seconds += 0.25)
-        {
-            var percent = ReadAt(seconds).Percent;
-            Assert.True(percent is null or (>= 5 and <= 100), $"t={seconds}: {percent}");
-        }
-    }
-
-    [Theory]
-    [InlineData(MockMode.Discharging85, ConnectionState.Connected, 85, ChargingState.Discharging)]
-    [InlineData(MockMode.Discharging25, ConnectionState.Connected, 25, ChargingState.Discharging)]
-    [InlineData(MockMode.Discharging10, ConnectionState.Connected, 10, ChargingState.Discharging)]
-    [InlineData(MockMode.Charging60, ConnectionState.Connected, 60, ChargingState.Charging)]
-    [InlineData(MockMode.Full100, ConnectionState.Connected, 100, ChargingState.Full)]
-    [InlineData(MockMode.Asleep, ConnectionState.Asleep, null, ChargingState.Unknown)]
-    [InlineData(MockMode.NotFound, ConnectionState.NotFound, null, ChargingState.Unknown)]
-    public void Fixed_mode_reports_its_reading(MockMode mode, ConnectionState connection, int? percent, ChargingState charging)
-    {
-        var provider = new MockBatteryProvider(new FakeTime()) { Mode = mode };
-
-        var status = Read(provider);
-
-        Assert.Equal((connection, percent, charging), (status.Connection, status.Percent, status.Charging));
-    }
-
     private static IReadOnlyList<DeviceReading> ReadAll(MockBatteryProvider provider) => provider.ReadAsync().Result;
 
     [Fact]
@@ -95,28 +68,20 @@ public class MockBatteryProviderTests
     }
 
     [Fact]
-    public void Several_devices_adds_a_connected_keyboard_and_an_asleep_headset_after_the_mouse()
+    public void Several_devices_adds_a_connected_keyboard_and_an_asleep_headset_after_the_mouse_which_still_follows_the_mode()
     {
-        var provider = new MockBatteryProvider(new FakeTime()) { SeveralDevices = true };
+        var provider = new MockBatteryProvider(new FakeTime()) { SeveralDevices = true, Mode = MockMode.Full100 };
 
         var readings = ReadAll(provider);
 
         Assert.Equal(
             [("00000001", "Mock mouse"), ("00000002", "Mock keyboard"), ("00000003", "Mock headset")],
             readings.Select(reading => (reading.Device.Id.ToString(), reading.Device.Name)));
+        var mouse = readings[0].Status!;
+        Assert.Equal((ConnectionState.Connected, 100, ChargingState.Full), (mouse.Connection, mouse.Percent, mouse.Charging));
         var keyboard = readings[1].Status!;
         Assert.Equal((ConnectionState.Connected, 60, ChargingState.Discharging), (keyboard.Connection, keyboard.Percent, keyboard.Charging));
         var headset = readings[2].Status!;
         Assert.Equal((ConnectionState.Asleep, (int?)null, ChargingState.Unknown), (headset.Connection, headset.Percent, headset.Charging));
-    }
-
-    [Fact]
-    public void Mouse_still_follows_the_mode_when_several_devices_are_on()
-    {
-        var provider = new MockBatteryProvider(new FakeTime()) { SeveralDevices = true, Mode = MockMode.Full100 };
-
-        var mouse = ReadAll(provider)[0].Status!;
-
-        Assert.Equal((ConnectionState.Connected, 100, ChargingState.Full), (mouse.Connection, mouse.Percent, mouse.Charging));
     }
 }

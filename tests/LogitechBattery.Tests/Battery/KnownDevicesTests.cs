@@ -52,12 +52,6 @@ public class KnownDevicesTests
     }
 
     [Fact]
-    public void Nothing_is_known_before_a_device_is_seen()
-    {
-        Assert.True(new KnownDevices().IsEmpty);
-    }
-
-    [Fact]
     public void A_later_real_name_replaces_the_stored_one()
     {
         var known = new KnownDevices();

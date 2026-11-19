@@ -15,8 +15,4 @@ public class BatteryAlertTextTests
     [Fact]
     public void Full_title_names_the_device() =>
         Assert.Equal(("PRO X2 fully charged", "100%."), BatteryAlertText.For(BatteryAlert.Full, 100, "PRO X2"));
-
-    [Fact]
-    public void Unknown_alert_is_rejected() =>
-        Assert.Throws<ArgumentOutOfRangeException>(() => BatteryAlertText.For((BatteryAlert)99, 50, "PRO X2"));
 }

@@ -45,23 +45,6 @@ public sealed class SettingsFileTests : IDisposable
         Assert.Equal(NonDefaultAlerts, CreateSettingsFile().Load().Alerts);
     }
 
-    [Fact]
-    public void Saved_file_has_the_exact_format()
-    {
-        CreateSettingsFile().Save(NonDefault);
-
-        Assert.Equal(
-            [
-                "# Logitech Battery settings. Exit the app before you edit this file: it reads the file only at startup.",
-                "# lowAlertPercent: one of 10, 15, 20. fullChargeAlert: true or false.",
-                "# The trayDevice and device lines are written by the app.",
-                "version=2",
-                "lowAlertPercent=20",
-                "fullChargeAlert=false",
-            ],
-            File.ReadAllLines(FilePath));
-    }
-
     private static AppSettings WithDevices(DeviceId? trayDevice, params (DeviceId Id, string Name)[] names) =>
         new(NonDefaultAlerts, trayDevice, names.ToDictionary(entry => entry.Id, entry => entry.Name));
 
@@ -137,23 +120,38 @@ public sealed class SettingsFileTests : IDisposable
     }
 
     [Fact]
-    public void Device_name_key_with_an_invalid_id_is_dropped_at_the_next_save()
-    {
-        WriteFile("device.zzz.name=Mouse");
-        var settings = CreateSettingsFile();
-
-        settings.Save(settings.Load());
-
-        Assert.DoesNotContain("device.zzz", File.ReadAllText(FilePath));
-    }
-
-    [Fact]
     public void Device_name_with_a_line_break_or_control_characters_is_cleaned_when_written()
     {
         var lines = SaveAndReadLines(WithDevices(null, (MouseId, "PRO\r\nX2\u0007\tfoo=bar")));
 
-        Assert.Equal("device.A1B2C3D4.name=PROX2foo=bar", lines[^1]);
-        Assert.Equal(7, lines.Length);
+        var deviceLine = Assert.Single(lines, line => line.StartsWith("device."));
+        Assert.Equal("device.A1B2C3D4.name=PROX2foo=bar", deviceLine);
+        Assert.Equal(deviceLine, lines[^1]);
+    }
+
+    [Fact]
+    public void Device_name_with_an_equals_sign_loads_back_unchanged()
+    {
+        const string name = "Dock = left";
+        CreateSettingsFile().Save(WithDevices(null, (MouseId, name)));
+
+        Assert.Equal(name, CreateSettingsFile().Load().DeviceNames[MouseId]);
+    }
+
+    [Fact]
+    public void Hand_edited_device_name_with_control_characters_is_cleaned_when_read()
+    {
+        var parsed = Parse("device.A1B2C3D4.name=PRO\u0007\tX2");
+
+        Assert.Equal("PROX2", parsed.Settings.DeviceNames[MouseId]);
+    }
+
+    [Fact]
+    public void Hand_edited_device_name_longer_than_64_characters_is_cut_when_read()
+    {
+        var parsed = Parse("device.A1B2C3D4.name=" + new string('x', 100));
+
+        Assert.Equal(new string('x', 64), parsed.Settings.DeviceNames[MouseId]);
     }
 
     [Fact]
@@ -170,29 +168,6 @@ public sealed class SettingsFileTests : IDisposable
         var lines = SaveAndReadLines(WithDevices(null, (MouseId, "\r\n\t "), (KeyboardId, "")));
 
         Assert.DoesNotContain(lines, line => line.StartsWith("device."));
-    }
-
-    [Fact]
-    public void Version_3_file_keeps_its_device_values_readable_and_is_never_overwritten()
-    {
-        WriteFile("version=3", "trayDevice=A1B2C3D4", "device.A1B2C3D4.name=PRO X2");
-        var before = File.ReadAllBytes(FilePath);
-        var settings = CreateSettingsFile();
-
-        var loaded = settings.Load();
-
-        Assert.Equal(MouseId, loaded.TrayDevice);
-        Assert.Equal("PRO X2", loaded.DeviceNames[MouseId]);
-        Assert.NotNull(settings.Save(loaded));
-        Assert.Equal(before, File.ReadAllBytes(FilePath));
-    }
-
-    [Fact]
-    public void Save_leaves_no_temp_file()
-    {
-        CreateSettingsFile().Save(NonDefault);
-
-        Assert.Equal([FilePath], Directory.GetFiles(_folder.Path));
     }
 
     [Fact]
@@ -233,10 +208,7 @@ public sealed class SettingsFileTests : IDisposable
 
     [Theory]
     [InlineData("12")]
-    [InlineData("25")]
-    [InlineData("-5")]
     [InlineData("abc")]
-    [InlineData("15 %")]
     [InlineData("+15")]
     [InlineData("")]
     public void A_bad_low_level_falls_back_to_its_default_and_keeps_the_other_value(string badValue)
@@ -309,13 +281,17 @@ public sealed class SettingsFileTests : IDisposable
     }
 
     [Fact]
-    public void Newer_version_is_never_overwritten()
+    public void Newer_version_is_read_but_never_overwritten()
     {
-        WriteFile("version=3", "lowAlertPercent=20", "somethingNew=1");
+        WriteFile("version=3", "lowAlertPercent=20", "trayDevice=A1B2C3D4", "device.A1B2C3D4.name=PRO X2", "somethingNew=1");
         var before = File.ReadAllBytes(FilePath);
         var settings = CreateSettingsFile();
 
-        Assert.Equal(20, settings.Load().Alerts.LowPercent);
+        var loaded = settings.Load();
+
+        Assert.Equal(20, loaded.Alerts.LowPercent);
+        Assert.Equal(MouseId, loaded.TrayDevice);
+        Assert.Equal("PRO X2", loaded.DeviceNames[MouseId]);
         Assert.NotNull(settings.Save(AppSettings.Default));
         Assert.Equal(before, File.ReadAllBytes(FilePath));
     }

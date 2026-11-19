@@ -31,15 +31,6 @@ public sealed class BatteryHistoryTests : IDisposable
     }
 
     [Fact]
-    public void Record_returns_false_for_an_unchanged_reading()
-    {
-        var history = new BatteryHistory(FilePath);
-        history.Record(Reading());
-
-        Assert.False(history.Record(Reading(after: TimeSpan.FromMinutes(1))));
-    }
-
-    [Fact]
     public void Record_returns_false_without_throwing_when_the_write_fails()
     {
         Directory.CreateDirectory(_folder);
@@ -81,7 +72,7 @@ public sealed class BatteryHistoryTests : IDisposable
         var history = new BatteryHistory(FilePath);
         history.Record(Reading());
 
-        history.Record(Reading(after: TimeSpan.FromMinutes(14)));
+        Assert.False(history.Record(Reading(after: TimeSpan.FromMinutes(14))));
 
         Assert.Single(Lines());
     }
@@ -145,9 +136,9 @@ public sealed class BatteryHistoryTests : IDisposable
     [Fact]
     public void Unknown_percent_is_written_as_an_empty_field_and_read_back_as_null()
     {
-        new BatteryHistory(FilePath).Record(Reading(percent: null, connection: ConnectionState.Asleep));
+        new BatteryHistory(FilePath).Record(Reading(percent: null, charging: ChargingState.Unknown, connection: ConnectionState.Asleep));
 
-        Assert.Equal("2026-11-04T22:50:42Z,,Discharging,Asleep", Lines()[0]);
+        Assert.Equal("2026-11-04T22:50:42Z,,Unknown,Asleep", Lines()[0]);
         var record = Assert.Single(new BatteryHistory(FilePath).ReadSince(DateTimeOffset.MinValue));
         Assert.Null(record.Percent);
     }
@@ -301,14 +292,6 @@ public sealed class BatteryHistoryTests : IDisposable
         history.Record(Reading());
 
         Assert.Equal(2, Lines().Length);
-    }
-
-    [Fact]
-    public void Asleep_reading_is_written_with_an_empty_percent()
-    {
-        new BatteryHistory(FilePath).Record(Reading(percent: null, charging: ChargingState.Unknown, connection: ConnectionState.Asleep));
-
-        Assert.Equal("2026-11-04T22:50:42Z,,Unknown,Asleep", Lines()[0]);
     }
 
     [Theory]

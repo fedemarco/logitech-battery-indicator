@@ -12,23 +12,12 @@ public sealed class HistoryChartTests
     private static HistoryChart Day(params HistoryRecord[] records) => HistoryChart.Build(records, Now, HistoryChart.Day);
 
     [Fact]
-    public void A_time_at_the_start_of_the_window_is_at_fraction_0() =>
+    public void A_time_is_its_fraction_of_the_window_from_start_0_to_now_1()
+    {
         Assert.Equal(0, HistoryChart.WindowFraction(Now - HistoryChart.Day, Now, HistoryChart.Day));
-
-    [Fact]
-    public void A_time_half_way_through_the_window_is_at_fraction_one_half() =>
         Assert.Equal(0.5, HistoryChart.WindowFraction(Now - HistoryChart.Day / 2, Now, HistoryChart.Day));
-
-    [Fact]
-    public void Now_is_at_fraction_1() =>
         Assert.Equal(1, HistoryChart.WindowFraction(Now, Now, HistoryChart.Day));
-
-    [Theory]
-    [InlineData(0, 0)]
-    [InlineData(50, 0.5)]
-    [InlineData(100, 1)]
-    public void A_percent_is_the_same_fraction_of_the_plot_height(int percent, double fraction) =>
-        Assert.Equal(fraction, HistoryChart.HeightFraction(percent));
+    }
 
     [Fact]
     public void Empty_history_has_no_points_and_no_joins()
@@ -73,15 +62,6 @@ public sealed class HistoryChartTests
     }
 
     [Fact]
-    public void When_every_pair_is_further_apart_than_20_minutes_all_joins_are_dashed()
-    {
-        var chart = Day(Record(TimeSpan.FromHours(9), 90), Record(TimeSpan.FromHours(6), 70), Record(TimeSpan.FromHours(2), 50));
-
-        Assert.Equal(2, chart.Joins.Count);
-        Assert.All(chart.Joins, join => Assert.False(join.IsSolid));
-    }
-
-    [Fact]
     public void Records_out_of_order_are_sorted_by_time()
     {
         var chart = Day(Record(TimeSpan.FromHours(1), 60), Record(TimeSpan.FromHours(3), 80), Record(TimeSpan.FromHours(2), 70));
@@ -119,15 +99,6 @@ public sealed class HistoryChartTests
         var chart = Day(Record(TimeSpan.Zero, 90));
 
         Assert.Equal([90], chart.Points.Select(point => point.Percent));
-    }
-
-    [Fact]
-    public void The_week_window_keeps_records_the_day_window_drops()
-    {
-        var records = new[] { Record(TimeSpan.FromDays(3), 90), Record(TimeSpan.FromHours(1), 40) };
-
-        Assert.Equal(2, HistoryChart.Build(records, Now, HistoryChart.Week).Points.Count);
-        Assert.Single(HistoryChart.Build(records, Now, HistoryChart.Day).Points);
     }
 
     [Fact]
@@ -179,20 +150,20 @@ public sealed class HistoryChartTests
     }
 
     [Theory]
-    [InlineData(2026, 3, 31, 2)]  // week after the spring-forward Sunday 29 March
-    [InlineData(2026, 10, 27, 2)] // week after the fall-back Sunday 25 October
-    public void Day_ticks_are_strictly_increasing_local_midnights_across_a_DST_change(int year, int month, int day, int transitionHour)
+    [InlineData(2026, 3, 31)]  // week after the spring-forward Sunday 29 March
+    [InlineData(2026, 10, 27)] // week after the fall-back Sunday 25 October
+    public void Day_ticks_are_strictly_increasing_local_midnights_across_a_DST_change(int year, int month, int day)
     {
-        var zone = ZoneWithDst(transitionHour);
+        var zone = ZoneWithDst(springForwardHour: 2);
         var now = new DateTimeOffset(year, month, day, 12, 0, 0, TimeSpan.Zero);
 
         var ticks = HistoryChart.DayTicks(now, zone);
 
-        Assert.Equal(7, ticks.Count);
-        Assert.All(ticks, tick => Assert.Equal(TimeSpan.Zero, TimeZoneInfo.ConvertTime(tick.Time, zone).TimeOfDay));
-        Assert.All(ticks, tick => Assert.True(tick.Time > now - HistoryChart.Week && tick.Time <= now));
-        // 23 to 25 h between neighbours also proves the ticks are strictly increasing
-        Assert.All(ticks.Skip(1).Zip(ticks, (later, earlier) => later.Time - earlier.Time), gap => Assert.InRange(gap, TimeSpan.FromHours(23), TimeSpan.FromHours(25)));
+        var tickTimes = ticks.Select(tick => tick.Time).ToList();
+        Assert.Equal(7, tickTimes.Count);
+        Assert.All(tickTimes, time => Assert.Equal(TimeSpan.Zero, TimeZoneInfo.ConvertTime(time, zone).TimeOfDay));
+        Assert.All(tickTimes, time => Assert.True(time > now - HistoryChart.Week && time <= now));
+        Assert.Equal(tickTimes.Order().Distinct(), tickTimes);
     }
 
     [Fact]

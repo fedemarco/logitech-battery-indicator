@@ -23,6 +23,15 @@ public class DeviceNamesTests
         Assert.Equal(new string('n', DeviceNames.MaxLength), DisplayNameOf(MouseId, new DeviceInfo(MouseId, new string('n', 50))));
 
     [Fact]
+    public void A_cut_inside_a_surrogate_pair_leaves_no_half_pair()
+    {
+        const string grinningFace = "\U0001F600";
+        var name = new string('n', DeviceNames.MaxLength - 1) + grinningFace;
+
+        Assert.Equal(new string('n', DeviceNames.MaxLength - 1), DisplayNameOf(MouseId, new DeviceInfo(MouseId, name)));
+    }
+
+    [Fact]
     public void Names_that_occur_twice_get_the_last_four_id_characters()
     {
         var names = DeviceNames.Display([new DeviceInfo(MouseId, "PRO X2"), new DeviceInfo(SecondMouseId, "PRO X2"), new DeviceInfo(KeyboardId, "G915")]);

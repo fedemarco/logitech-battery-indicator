@@ -13,14 +13,9 @@ public sealed class ChargeHistoryTests
         ChargeHistory.Describe(lastCharge, TestData.Status(charging: current, at: Now), Now, TimeZoneInfo.Utc);
 
     [Fact]
-    public void Last_charge_is_null_for_an_empty_history()
+    public void Last_charge_is_null_for_an_empty_history_or_when_the_mouse_only_discharged()
     {
         Assert.Null(ChargeHistory.LastCharge([], Now));
-    }
-
-    [Fact]
-    public void Last_charge_is_null_when_the_mouse_only_discharged()
-    {
         Assert.Null(ChargeHistory.LastCharge([Record(Now.AddHours(-1), ChargingState.Discharging, 70)], Now));
     }
 

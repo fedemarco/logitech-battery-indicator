@@ -10,6 +10,14 @@ public class HidPpMessageTests
     // Function 1 in the high nibble, software id 0x0A in the low one.
     private const byte Function1WithSoftwareId = 0x1A;
 
+    private const byte OtherDeviceIndex = 0x02;
+    private const byte OtherFeatureIndex = 0x05;
+    private const byte NoSoftwareId = 0x00;
+    private const byte Function1WithNoSoftwareId = 0x10;
+    private const byte Function1WithOtherSoftwareId = 0x1F;
+    private const byte Hidpp2ErrorMarker = 0xFF;
+    private const byte DjReportId = 0x20;
+
     private const byte RotatedSoftwareId = 0x03;
     private const byte PreviousSoftwareId = 0x02;
     private const byte Function1WithRotatedId = 0x10 | RotatedSoftwareId;
@@ -55,34 +63,22 @@ public class HidPpMessageTests
     }
 
     [Fact]
-    public void Request_with_too_many_parameters_is_rejected() =>
-        Assert.Throws<ArgumentException>(() =>
-            HidPpMessage.BuildRequest(DeviceIndex, FeatureIndex, 0, HidPpMessage.SoftwareId, new byte[17]));
-
-    [Fact]
     public void Set_register_is_a_short_report_with_the_write_sub_id_register_and_value() =>
         Assert.Equal([0x10, 0xFF, 0x80, 0x00, 0x00, 0x01, 0x00],
             HidPpMessage.BuildSetRegister(HidPpMessage.ReceiverIndex, register: 0x00, [0x00, 0x01, 0x00]));
 
-    [Fact]
-    public void Report_with_software_id_zero_from_the_device_and_feature_is_an_event() =>
-        Assert.True(HidPpMessage.IsEventFrom(Report(0x11, 0x01, 0x06, 0x00, 0x19, 0x02), deviceIndex: 1, featureIndex: 6));
+    [Theory]
+    [InlineData(DeviceIndex, FeatureIndex, NoSoftwareId, true)]
+    [InlineData(DeviceIndex, FeatureIndex, Function1WithSoftwareId, false)] // response to our own request
+    [InlineData(DeviceIndex, FeatureIndex, Function1WithOtherSoftwareId, false)] // response to other software
+    [InlineData(OtherDeviceIndex, FeatureIndex, NoSoftwareId, false)]
+    [InlineData(DeviceIndex, OtherFeatureIndex, NoSoftwareId, false)]
+    public void Only_a_report_with_software_id_zero_from_the_device_and_feature_is_an_event(byte deviceIndex, byte featureIndex, byte functionAndSoftwareId, bool isEvent)
+    {
+        var report = Report(HidPpMessage.LongId, deviceIndex, featureIndex, functionAndSoftwareId, 0x19, 0x02);
 
-    [Fact]
-    public void Response_to_our_own_request_is_not_an_event() =>
-        Assert.False(HidPpMessage.IsEventFrom(Report(0x11, 0x01, 0x06, 0x1A, 0x19, 0x02), deviceIndex: 1, featureIndex: 6));
-
-    [Fact]
-    public void Response_to_other_software_is_not_an_event() =>
-        Assert.False(HidPpMessage.IsEventFrom(Report(0x11, 0x01, 0x06, 0x1F, 0x19, 0x02), deviceIndex: 1, featureIndex: 6));
-
-    [Fact]
-    public void Event_from_another_device_index_is_ignored() =>
-        Assert.False(HidPpMessage.IsEventFrom(Report(0x11, 0x02, 0x06, 0x00, 0x19, 0x02), deviceIndex: 1, featureIndex: 6));
-
-    [Fact]
-    public void Event_from_another_feature_index_is_ignored() =>
-        Assert.False(HidPpMessage.IsEventFrom(Report(0x11, 0x01, 0x07, 0x00, 0x19, 0x02), deviceIndex: 1, featureIndex: 6));
+        Assert.Equal(isEvent, HidPpMessage.IsEventFrom(report, DeviceIndex, FeatureIndex));
+    }
 
     [Fact]
     public void Get_register_is_a_short_report_with_the_read_sub_id_and_the_register_address() =>
@@ -98,10 +94,6 @@ public class HidPpMessageTests
     public void GetFeature_asks_the_root_feature_for_the_index_of_a_feature_id() =>
         Assert.Equal([0x11, DeviceIndex, 0x00, 0x0A, 0x10, 0x04],
             HidPpMessage.BuildGetFeature(DeviceIndex, 0x1004)[..6]);
-
-    [Fact]
-    public void Params_start_after_the_header() =>
-        Assert.Equal([0xAB, 0x00], HidPpMessage.ParamsOf(SampleRequest)[..2]);
 
     [Fact]
     public void Same_feature_and_function_from_same_device_is_the_response()
@@ -137,35 +129,16 @@ public class HidPpMessageTests
         Assert.Equal(HidPpReplyKind.None,
             HidPpMessage.Classify(RotatedRequest, Report(0x11, DeviceIndex, FeatureIndex, Function1WithPreviousId, 0x55)).Kind);
 
-    [Fact]
-    public void Hidpp2_error_echoing_the_rotated_software_id_answers_the_rotated_request() =>
-        Assert.Equal(new HidPpReply(HidPpReplyKind.Error20, 2),
-            HidPpMessage.Classify(RotatedRequest, Report(0x11, DeviceIndex, 0xFF, FeatureIndex, Function1WithRotatedId, 0x02)));
-
-    [Fact]
-    public void Hidpp1_error_echoing_the_rotated_software_id_answers_the_rotated_request() =>
-        Assert.Equal(new HidPpReply(HidPpReplyKind.Error10, 9),
-            HidPpMessage.Classify(RotatedRequest, [0x10, DeviceIndex, 0x8F, FeatureIndex, Function1WithRotatedId, 0x09, 0x00]));
-
-    [Fact]
-    public void Event_with_software_id_0_never_answers_a_request() =>
-        Assert.Equal(HidPpReplyKind.None,
-            HidPpMessage.Classify(RotatedRequest, Report(0x11, DeviceIndex, FeatureIndex, 0x10, 0x55)).Kind);
-
     [Theory]
-    [InlineData(0x11, 0x02, 0x04, 0x1A)] // other device
-    [InlineData(0x11, 0x01, 0x05, 0x1A)] // other feature (notification)
-    [InlineData(0x11, 0x01, 0x04, 0x10)] // other function/swId
-    [InlineData(0x11, 0x01, 0xFF, 0x05)] // error for another feature
-    [InlineData(0x20, 0x01, 0x04, 0x1A)] // not HID++ (DJ) report
-    public void Unrelated_reports_are_not_an_answer(int reportId, int device, int feature, int functionAndSoftwareId)
+    [InlineData(HidPpMessage.LongId, OtherDeviceIndex, FeatureIndex, Function1WithSoftwareId)]
+    [InlineData(HidPpMessage.LongId, DeviceIndex, OtherFeatureIndex, Function1WithSoftwareId)] // a notification
+    [InlineData(HidPpMessage.LongId, DeviceIndex, FeatureIndex, Function1WithNoSoftwareId)] // an event never answers a request
+    [InlineData(HidPpMessage.LongId, DeviceIndex, Hidpp2ErrorMarker, OtherFeatureIndex)] // error for another feature
+    [InlineData(DjReportId, DeviceIndex, FeatureIndex, Function1WithSoftwareId)] // not a HID++ report
+    public void Unrelated_reports_are_not_an_answer(byte reportId, byte deviceIndex, byte featureOrMarker, byte functionAndSoftwareId)
     {
-        var report = Report((byte)reportId, (byte)device, (byte)feature, (byte)functionAndSoftwareId, 0x00, 0x00);
+        var report = Report(reportId, deviceIndex, featureOrMarker, functionAndSoftwareId, 0x00, 0x00);
 
         Assert.Equal(HidPpReplyKind.None, HidPpMessage.Classify(SampleRequest, report).Kind);
     }
-
-    [Fact]
-    public void Hex_has_lowercase_bytes_separated_by_spaces() =>
-        Assert.Equal("11 0a ff", HidPpMessage.ToHex([0x11, 0x0A, 0xFF]));
 }

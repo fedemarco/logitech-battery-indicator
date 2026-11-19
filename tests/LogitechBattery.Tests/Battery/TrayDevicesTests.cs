@@ -54,7 +54,8 @@ public class TrayDevicesTests
         var devices = Build([Mouse(TestData.Status(85))], saved: KeyboardId, names);
 
         Assert.Equal(new TrayDeviceItem(KeyboardId, "G915 · not found", true), devices.Items[1]);
-        Assert.Equal("G915: Not found", $"{devices.TrayName}: {devices.StatusLine}");
+        Assert.Equal("G915", devices.TrayName);
+        Assert.Equal("Not found", devices.StatusLine);
     }
 
     [Fact]

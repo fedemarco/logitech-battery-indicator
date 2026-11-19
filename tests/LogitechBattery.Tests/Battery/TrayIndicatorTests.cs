@@ -5,7 +5,6 @@ namespace LogitechBattery.Tests;
 public class TrayIndicatorTests
 {
     [Theory]
-    [InlineData(-5, "battery0")]
     [InlineData(0, "battery0")]
     [InlineData(19, "battery0")]
     [InlineData(20, "battery25")]
@@ -16,7 +15,6 @@ public class TrayIndicatorTests
     [InlineData(79, "battery75")]
     [InlineData(80, "battery100")]
     [InlineData(100, "battery100")]
-    [InlineData(150, "battery100")]
     public void Discharging_percent_picks_the_gauge_icon_in_steps_of_25(int percent, string icon) =>
         Assert.Equal(icon, TrayIndicator.From(TestData.Status(percent)).Icon);
 

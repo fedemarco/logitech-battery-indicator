@@ -11,6 +11,7 @@ public sealed class DeviceHistoriesTests : IDisposable
     private const string Early = "2026-11-05T08:00:00Z,80,Discharging,Connected";
     private const string Middle = "2026-11-05T09:00:00Z,75,Discharging,Connected";
     private const string Late = "2026-11-05T10:00:00Z,70,Discharging,Connected";
+    private const string BeyondRetention = "2025-09-01T10:00:00Z,90,Discharging,Connected"; // more than a year before Late
 
     private readonly TempFolder _data = new();
 
@@ -149,6 +150,27 @@ public sealed class DeviceHistoriesTests : IDisposable
         Assert.Contains("damaged line", File.ReadAllLines(MouseFile));
     }
 
+    [Fact]
+    public void A_line_that_is_not_a_record_is_dropped_once_pruning_rewrites_the_merged_file()
+    {
+        WriteLegacy(Late, "damaged line");
+        WriteMouseFile(BeyondRetention);
+
+        NewSession().For(Mouse, Now);
+
+        Assert.Equal([Late], File.ReadAllLines(MouseFile));
+    }
+
+    [Fact]
+    public void The_first_use_of_a_device_prunes_records_older_than_the_retention()
+    {
+        WriteMouseFile(BeyondRetention, Late);
+
+        NewSession().For(Mouse, Now);
+
+        Assert.Equal([Late], File.ReadAllLines(MouseFile));
+    }
+
     [WindowsFact]
     public void A_locked_target_keeps_both_files_and_the_move_works_at_the_next_start()
     {
@@ -177,6 +199,16 @@ public sealed class DeviceHistoriesTests : IDisposable
 
         Assert.Empty(Directory.GetFiles(HistoryFolder));
         Assert.False(File.Exists(LegacyPath));
+    }
+
+    [WindowsFact]
+    public void ClearAll_returns_false_while_a_history_file_is_locked()
+    {
+        var histories = NewSession();
+        histories.For(Keyboard, Now).Record(TestData.Status(percent: 50, at: Now));
+
+        using (new FileStream(Path.Combine(HistoryFolder, "A1B2C3D4.csv"), FileMode.Open, FileAccess.Read, FileShare.Read))
+            Assert.False(histories.ClearAll());
     }
 
     [Fact]

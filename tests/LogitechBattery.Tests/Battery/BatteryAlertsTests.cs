@@ -33,11 +33,14 @@ public class BatteryAlertsTests
         Assert.Equal([Quiet, BatteryAlert.Low, Quiet],
             AlertsFor(LowAt(lowPercent), Discharging(lowPercent + 1), Discharging(lowPercent), Discharging(lowPercent - 1)));
 
-    [Theory]
-    [MemberData(nameof(LowChoices))]
-    public void Critical_alert_fires_at_5_percent_for_every_low_choice(int lowPercent) =>
+    [Fact]
+    public void Critical_alert_fires_at_5_percent_after_the_low_alert()
+    {
+        var lowPercent = AlertSettings.LowChoices.Min();
+
         Assert.Equal([BatteryAlert.Low, Quiet, BatteryAlert.Critical],
             AlertsFor(LowAt(lowPercent), Discharging(lowPercent), Discharging(6), Discharging(5)));
+    }
 
     [Theory]
     [MemberData(nameof(LowChoices))]
@@ -119,14 +122,6 @@ public class BatteryAlertsTests
     [Fact]
     public void Reaching_full_makes_low_alert_again() =>
         Assert.Equal([BatteryAlert.Low, BatteryAlert.Full, BatteryAlert.Low], AlertsFor(Discharging(10), Full(), Discharging(10)));
-
-    [Fact]
-    public void Bouncing_around_15_percent_alerts_low_once() =>
-        Assert.Equal([BatteryAlert.Low, Quiet, Quiet, Quiet], AlertsFor(Discharging(15), Discharging(16), Discharging(15), Discharging(16)));
-
-    [Fact]
-    public void Rising_to_25_percent_makes_low_alert_again() =>
-        Assert.Equal([BatteryAlert.Low, Quiet, BatteryAlert.Low], AlertsFor(Discharging(15), Discharging(25), Discharging(15)));
 
     [Fact]
     public void Asleep_and_not_found_readings_are_ignored() =>

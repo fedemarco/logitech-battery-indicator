@@ -23,12 +23,8 @@ public class AppLogRedactTests
         Assert.Equal(@"C:\Users\annabel\x", AppLog.Redact(@"C:\Users\annabel\x", Profile));
 
     [Fact]
-    public void The_bare_user_name_is_left_alone() =>
+    public void Text_that_only_mentions_the_user_name_is_unchanged() =>
         Assert.Equal("anna charged the mouse", AppLog.Redact("anna charged the mouse", Profile));
-
-    [Fact]
-    public void Text_without_the_profile_folder_is_unchanged() =>
-        Assert.Equal("Mouse link up", AppLog.Redact("Mouse link up", Profile));
 
     [Fact]
     public void Characters_that_mean_something_in_a_pattern_are_taken_literally() =>

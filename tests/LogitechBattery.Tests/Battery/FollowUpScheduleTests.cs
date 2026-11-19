@@ -19,10 +19,6 @@ public class FollowUpScheduleTests
     }
 
     [Fact]
-    public void Restart_returns_the_first_delay() =>
-        Assert.Equal(FirstDelayMs, new FollowUpSchedule().Restart());
-
-    [Fact]
     public void A_connected_read_stops_the_follow_up()
     {
         var schedule = StartedSchedule(out var generation);

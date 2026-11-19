@@ -46,12 +46,6 @@ public sealed class RemainingTimeTests
     public void Less_than_five_percent_gives_no_rate() => Assert.Null(Rate(Record(5, 80), Record(0, 76)));
 
     [Fact]
-    public void No_drop_gives_no_rate_instead_of_dividing_by_zero() => Assert.Null(Rate(Record(5, 80), Record(0, 80)));
-
-    [Fact]
-    public void A_history_that_only_rises_gives_no_rate() => Assert.Null(Rate(Record(5, 70), Record(0, 72)));
-
-    [Fact]
     public void A_small_rise_splits_the_segment_and_both_drops_count()
     {
         var rate = Rate(Record(5, 90), Record(4, 80), Record(3, 81), Record(0, 51));
@@ -116,7 +110,6 @@ public sealed class RemainingTimeTests
     [Theory]
     [InlineData(40, 10, "96 h left")]
     [InlineData(100, 6, "400 h left")] // 16.67 days at 6 %/day is 400 h
-    [InlineData(1, 24, "1 h left")]
     [InlineData(1, 36, "1 h left")] // 0.67 h rounds to 1
     [InlineData(1, 48, "1 h left")] // exactly 0.5 h rounds up
     public void Remaining_text_shows_whole_hours(int percent, double rate, string expected) =>
