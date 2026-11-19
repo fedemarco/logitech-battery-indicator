@@ -49,7 +49,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     private void OnUsbDevicesChanged(object? sender, DeviceListChangedEventArgs e)
     {
         AppLog.Info("USB devices changed");
-        _rediscover = true; // the best route may have changed (cable preferred over receiver)
+        _rediscover = true; // a channel may have come or gone: open new ones, drop the routes on closed ones
         _forgetSkippedSlots = true; // a device may have been paired into a skipped slot
         ChangeDetected?.Invoke();
     }
@@ -101,7 +101,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         var now = DateTimeOffset.Now;
         ApplyRequestedResets();
         if (_rediscover || _channels.Any(channel => channel.IsClosed))
-            RefreshChannelsAndForgetRoutes(cancellationToken);
+            RefreshChannelsForRediscovery(cancellationToken);
 
         _routes.DropRoutesOnClosedChannels();
         var channelLost = LoseChannels(_routes.Discover(_channels, cancellationToken));
@@ -125,9 +125,8 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         }
     }
 
-    private void RefreshChannelsAndForgetRoutes(CancellationToken cancellationToken)
+    private void RefreshChannelsForRediscovery(CancellationToken cancellationToken)
     {
-        _routes.Clear();
         _rediscover = false; // cleared first, so a USB event during the refresh is not lost
         try
         {

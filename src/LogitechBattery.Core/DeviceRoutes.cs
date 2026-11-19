@@ -143,16 +143,32 @@ internal sealed class DeviceRoutes
     private void Add(BatteryTarget target)
     {
         RememberName(target); // also for a second route to a routed device: its link events name the device too
-        if (_routes.Any(route => route.Device.Id == target.Device.Id))
+        var routeToSameDevice = _routes.FirstOrDefault(route => route.Device.Id == target.Device.Id);
+        if (routeToSameDevice is null)
         {
-            _slotsOfRoutedDevices.Add(target.Slot); // the same device on a second route: the first one found (the cable) stays
-            return;
+            SeenAt(target);
+            _routes = [.. _routes, target];
         }
+        else if (IsOnCable(target) && !IsOnCable(routeToSameDevice))
+        {
+            // A routed receiver slot is not probed again, so a cable plugged in later wins here, by replacement.
+            SeenAt(target); // the device moved to the cable: its "not answering" state now follows the cable
+            _slotsOfRoutedDevices.Add(routeToSameDevice.Slot);
+            _routes = [.. _routes.Where(route => route != routeToSameDevice), target];
+        }
+        else
+        {
+            _slotsOfRoutedDevices.Add(target.Slot); // the same device on a second route: the first one found stays
+        }
+    }
 
+    private void SeenAt(BatteryTarget target)
+    {
         if (Known.Seen(target.Device, target.Slot))
             LogDeviceFound(target);
-        _routes = [.. _routes, target];
     }
+
+    private static bool IsOnCable(BatteryTarget target) => HidPpMessage.CableDeviceIndexes.Contains(target.DeviceIndex);
 
     private void RememberName(BatteryTarget target) =>
         _deviceNamesBySlot = new Dictionary<Slot, string>(_deviceNamesBySlot) { [target.Slot] = target.Device.Name };

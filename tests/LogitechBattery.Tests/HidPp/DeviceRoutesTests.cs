@@ -25,6 +25,35 @@ public class DeviceRoutesTests
     }
 
     [Fact]
+    public void A_cable_found_after_the_receiver_route_replaces_it()
+    {
+        var receiver = new FakeHidPpChannel("receiver").With(FirstSlot, Mouse(MouseUnitId));
+        var cable = new FakeHidPpChannel("cable").With(CableIndex, Mouse(MouseUnitId));
+        var routes = new DeviceRoutes();
+        routes.Discover([receiver], CancellationToken.None);
+
+        routes.Discover([receiver, cable], CancellationToken.None);
+
+        var route = Assert.Single(routes.All);
+        Assert.Same(cable, route.Channel);
+        Assert.Equal(CableIndex, route.DeviceIndex);
+    }
+
+    [Fact]
+    public void A_routed_device_on_an_open_channel_keeps_its_route_and_its_slot_gets_no_new_requests_at_the_next_discovery()
+    {
+        var receiver = new FakeHidPpChannel().With(FirstSlot, Mouse(MouseUnitId));
+        var routes = new DeviceRoutes();
+        routes.Discover([receiver], CancellationToken.None);
+        var requestsAfterFirstDiscovery = receiver.RequestsTo(FirstSlot);
+
+        routes.Discover([receiver], CancellationToken.None);
+
+        Assert.Equal(FirstSlot, Assert.Single(routes.All).DeviceIndex);
+        Assert.Equal(requestsAfterFirstDiscovery, receiver.RequestsTo(FirstSlot));
+    }
+
+    [Fact]
     public void The_name_of_a_device_found_is_known_by_its_slot()
     {
         var routes = DiscoverMouseOnFirstSlot(out var channel);
