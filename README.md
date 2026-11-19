@@ -71,9 +71,17 @@ No telemetry. The app sends no data to any server and never connects to the inte
 
 ## Uninstall
 
-1. Untick **Start with Windows** in the tray menu, then choose **Exit**.
-2. Delete the exe and the folder `%LOCALAPPDATA%\LogitechBattery`.
-3. Optionally delete the registry key `HKCU\Software\LogitechBattery`.
+Run this in PowerShell. It stops the app and removes everything it created: the "Start with Windows" entries, its registry key, and the folder with the settings, the history and the log (and the exe, if you kept it there):
+
+```powershell
+Get-Process LogitechBattery -ErrorAction SilentlyContinue | Stop-Process -PassThru | Wait-Process
+$currentVersion = 'HKCU:\Software\Microsoft\Windows\CurrentVersion'
+Remove-ItemProperty "$currentVersion\Run", "$currentVersion\Explorer\StartupApproved\Run" LogitechBattery -ErrorAction SilentlyContinue
+Remove-Item 'HKCU:\Software\LogitechBattery' -Recurse -ErrorAction SilentlyContinue
+Remove-Item "$env:LOCALAPPDATA\LogitechBattery" -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+If you keep the exe in another folder, delete it too.
 
 ## Troubleshooting
 
