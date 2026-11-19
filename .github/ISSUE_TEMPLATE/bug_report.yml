@@ -7,7 +7,7 @@ body:
     attributes:
       label: App version
       description: Hover the tray icon, the last line shows the version. Or copy the last "Started LogitechBattery …" line from log.txt.
-      placeholder: 0.5.2
+      placeholder: 0.8.0
     validations:
       required: true
   - type: input
@@ -20,8 +20,9 @@ body:
   - type: input
     id: device
     attributes:
-      label: Device
-      value: PRO X2 SUPERSTRIKE
+      label: Devices
+      description: The Logitech devices connected while it happened, for example PRO X2 SUPERSTRIKE. Several are fine.
+      placeholder: PRO X2 SUPERSTRIKE
     validations:
       required: true
   - type: dropdown
@@ -32,6 +33,7 @@ body:
         - Lightspeed receiver
         - USB cable
         - Both
+        - Several receivers or cables
         - Other
     validations:
       required: true
