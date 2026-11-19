@@ -146,6 +146,15 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         var channelLost = false;
         foreach (var route in _routes.All)
         {
+            // A closed channel (unplugged, or lost for an earlier device of the same receiver in this pass) is lost once;
+            // reading its other devices would only log the loss again. The second read pass reads them anew.
+            if (route.Channel.IsClosed)
+            {
+                if (_channels.Any(channel => channel == route.Channel))
+                    Lost(route.Channel);
+                channelLost = true;
+                continue;
+            }
             var read = ReadStatus(route, now, cancellationToken);
             switch (read.Outcome)
             {
