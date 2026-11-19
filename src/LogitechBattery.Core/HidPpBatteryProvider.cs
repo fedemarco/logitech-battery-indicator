@@ -174,7 +174,9 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            AppLog.Write($"getStatus of {route.Device.Name} failed: {ex}"); // one faulty device must not fail the reading of the others
+            // one faulty device must not fail the reading of the others
+            // shortcut: logged at every poll while the device keeps failing (bounded by log rotation); log once per device if a real device ever does this
+            AppLog.Write($"getStatus of {route.Device.Name} failed: {ex.GetType().Name}: {ex.Message}");
             return new RouteRead(RouteOutcome.Failed);
         }
     }

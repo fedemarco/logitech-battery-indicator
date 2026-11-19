@@ -197,9 +197,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void ApplyAlertSettings(AlertSettings updated)
     {
-        _settings = _settings with { Alerts = updated }; // applies for this session even when the save fails
-        if (_settingsFile.Save(_settings) is { } problem)
-            ShowWarning(problem);
+        SaveSettings(_settings with { Alerts = updated }, ShowWarning);
         _ = RefreshAsync(); // a new level is checked against the current battery at once
     }
 
@@ -209,18 +207,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _mockTrayDevice = device;
         else
         {
-            _settings = _settings with { TrayDevice = device }; // applies for this session even when the save fails
-            if (_settingsFile.Save(_settings) is { } problem)
-                ShowWarning(problem);
+            SaveSettings(_settings with { TrayDevice = device }, ShowWarning);
         }
         ShowTrayDevice(CurrentDevices(), trayHistoryGotLine: false); // the last readings are enough, no new read
     }
 
     private void SaveDeviceNames(IReadOnlyDictionary<DeviceId, string> names)
     {
-        _settings = _settings with { DeviceNames = names };
-        if (_settingsFile.Save(_settings) is { } problem)
-            AppLog.Write(problem); // automatic save: no dialog
+        SaveSettings(_settings with { DeviceNames = names }, AppLog.Write); // automatic save: no dialog
     }
 
     // The simulator keeps its tray choice in _mockTrayDevice and never writes settings.ini.
@@ -231,9 +225,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (TrayDeviceChoice.FirstPickToSave(_readings, _settings.TrayDevice) is not { } device)
             return;
 
-        _settings = _settings with { TrayDevice = device }; // applies for this session even when the save fails
+        SaveSettings(_settings with { TrayDevice = device }, AppLog.Write); // automatic save: no dialog
+    }
+
+    private void SaveSettings(AppSettings updated, Action<string> reportProblem)
+    {
+        _settings = updated; // applies for this session even when the save fails
         if (_settingsFile.Save(_settings) is { } problem)
-            AppLog.Write(problem); // automatic save: no dialog
+            reportProblem(problem);
     }
 
     private static void ShowWarning(string message) =>

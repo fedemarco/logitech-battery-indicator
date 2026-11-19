@@ -40,14 +40,7 @@ public class DeviceRoutesTests
         var channel = new FakeHidPpChannel().With(FirstSlot, FakeDevice.Awake().WithName("Keyboard"));
         var routes = new DeviceRoutes();
         routes.Discover([channel], CancellationToken.None);
-        var requestsAfterFirstDiscovery = channel.RequestsTo(FirstSlot);
-
-        routes.Discover([channel], CancellationToken.None);
-        Assert.Equal(requestsAfterFirstDiscovery, channel.RequestsTo(FirstSlot));
-
-        routes.ForgetSkippedSlots();
-        routes.Discover([channel], CancellationToken.None);
-        Assert.True(channel.RequestsTo(FirstSlot) > requestsAfterFirstDiscovery);
+        AssertProbedAgainOnlyAfterForgettingSkippedSlots(channel, routes);
     }
 
     [Fact]
@@ -70,14 +63,7 @@ public class DeviceRoutesTests
         var channel = new FakeHidPpChannel().With(FirstSlot, FakeDevice.Awake().ThrowingOnEveryRequest(new InvalidOperationException()));
         var routes = new DeviceRoutes();
         routes.Discover([channel], CancellationToken.None);
-        var requestsAfterFirstDiscovery = channel.RequestsTo(FirstSlot);
-
-        routes.Discover([channel], CancellationToken.None);
-        Assert.Equal(requestsAfterFirstDiscovery, channel.RequestsTo(FirstSlot));
-
-        routes.ForgetSkippedSlots();
-        routes.Discover([channel], CancellationToken.None);
-        Assert.True(channel.RequestsTo(FirstSlot) > requestsAfterFirstDiscovery);
+        AssertProbedAgainOnlyAfterForgettingSkippedSlots(channel, routes);
     }
 
     [Fact]
@@ -88,6 +74,18 @@ public class DeviceRoutesTests
         var failedChannels = new DeviceRoutes().Discover([channel], CancellationToken.None);
 
         Assert.Same(channel, Assert.Single(failedChannels));
+    }
+
+    private static void AssertProbedAgainOnlyAfterForgettingSkippedSlots(FakeHidPpChannel channel, DeviceRoutes routes)
+    {
+        var requestsAfterFirstDiscovery = channel.RequestsTo(FirstSlot);
+
+        routes.Discover([channel], CancellationToken.None);
+        Assert.Equal(requestsAfterFirstDiscovery, channel.RequestsTo(FirstSlot));
+
+        routes.ForgetSkippedSlots();
+        routes.Discover([channel], CancellationToken.None);
+        Assert.True(channel.RequestsTo(FirstSlot) > requestsAfterFirstDiscovery);
     }
 
     private static FakeDevice Mouse(string unitId) =>

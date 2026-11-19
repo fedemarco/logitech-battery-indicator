@@ -14,7 +14,7 @@ public class HidPpBatteryReadTests
     [Fact]
     public void An_error_code_is_a_failed_read()
     {
-        var read = ReadAnswer(new HidPpAnswer(null, ErrorCode));
+        var read = ReadAnswerOnFakeRoute(new HidPpAnswer(null, ErrorCode));
 
         Assert.Equal(HidPpBatteryProvider.RouteOutcome.Failed, read.Outcome);
     }
@@ -22,7 +22,7 @@ public class HidPpBatteryReadTests
     [Fact]
     public void No_answer_is_no_answer()
     {
-        var read = ReadAnswer(HidPpAnswer.Nothing);
+        var read = ReadAnswerOnFakeRoute(HidPpAnswer.Nothing);
 
         Assert.Equal(HidPpBatteryProvider.RouteOutcome.NoAnswer, read.Outcome);
     }
@@ -30,7 +30,7 @@ public class HidPpBatteryReadTests
     [Fact]
     public void A_malformed_answer_is_a_failed_read()
     {
-        var read = ReadAnswer(new HidPpAnswer(StatusReport(), null)); // short report: only 3 params bytes
+        var read = ReadAnswerOnFakeRoute(new HidPpAnswer(AnswerWithoutStatusBytes, null));
 
         Assert.Equal(HidPpBatteryProvider.RouteOutcome.Failed, read.Outcome);
     }
@@ -38,7 +38,7 @@ public class HidPpBatteryReadTests
     [Fact]
     public void A_valid_answer_gives_the_status()
     {
-        var read = ReadAnswer(new HidPpAnswer(StatusReport(BatteryPercent, 0, 0, 0), null));
+        var read = ReadAnswerOnFakeRoute(new HidPpAnswer(StatusReport(BatteryPercent, 0, 0, 0), null));
 
         Assert.Equal(HidPpBatteryProvider.RouteOutcome.Answered, read.Outcome);
         Assert.Equal(BatteryPercent, read.Status!.Percent);
@@ -68,7 +68,9 @@ public class HidPpBatteryReadTests
         Assert.Throws<OperationCanceledException>(() => ReadStatusOn(channel));
     }
 
-    private static HidPpBatteryProvider.RouteRead ReadAnswer(HidPpAnswer answer) =>
+    private static byte[] AnswerWithoutStatusBytes => StatusReport();
+
+    private static HidPpBatteryProvider.RouteRead ReadAnswerOnFakeRoute(HidPpAnswer answer) =>
         HidPpBatteryProvider.ReadAnswer(RouteOn(new FakeHidPpChannel()), answer, Now);
 
     private static HidPpBatteryProvider.RouteRead ReadStatusOn(FakeHidPpChannel channel) =>

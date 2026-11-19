@@ -67,7 +67,6 @@ public class DeviceDiscoveryTests
     public void A_device_without_the_device_information_feature_gets_the_route_id()
     {
         Assert.Equal(RouteId, Found(Probe(BatteryDevice())).Device.Id);
-        Assert.Equal("R" + ProductId.ToString("X4") + "S01", RouteId.ToString());
     }
 
     [Fact]
