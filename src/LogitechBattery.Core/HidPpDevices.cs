@@ -17,6 +17,9 @@ internal static class HidPpDevices
     /// <summary>HID++ lives on a vendor-defined usage page: usually 0xFF00, newer devices may use a higher one.</summary>
     private const uint VendorPageMinimum = 0xFF00;
 
+    /// <summary>A Windows HID path has at least a prefix, an interface and an instance part, separated by '#'.</summary>
+    private const int MinimumPartCount = 3;
+
     public static uint UsagePage(uint usage) => usage >> 16;
 
     /// <summary>All top-level usages (page&lt;&lt;16|usage) of a collection. Throws if the report descriptor cannot be read.</summary>
@@ -31,11 +34,34 @@ internal static class HidPpDevices
         return new HidCollection(device, firstUsage, outputReportLength);
     }
 
-    // Everything before "&col" identifies the physical device.
+    /// <summary>
+    /// Key of the physical device behind a Windows HID path "prefix#interface&amp;colNN#instance#class-guid".
+    /// The instance id ends with the collection ordinal under one parent, while the parent hash before it
+    /// tells two devices of the same model apart. A path of another shape is its own key.
+    /// </summary>
     public static string GroupKey(string path)
     {
-        var collectionSuffixStart = path.IndexOf("&col", StringComparison.OrdinalIgnoreCase);
-        return collectionSuffixStart > 0 ? path[..collectionSuffixStart] : path;
+        var parts = path.Split('#');
+        if (parts.Length < MinimumPartCount)
+            return path;
+
+        var prefix = parts[0];
+        var interfacePart = WithoutCollectionSuffix(parts[1]);
+        var instancePart = WithoutCollectionOrdinal(parts[2]);
+        return $"{prefix}#{interfacePart}#{instancePart}".ToLowerInvariant();
+    }
+
+
+    private static string WithoutCollectionSuffix(string interfacePart)
+    {
+        var suffixStart = interfacePart.IndexOf("&col", StringComparison.OrdinalIgnoreCase);
+        return suffixStart >= 0 ? interfacePart[..suffixStart] : interfacePart;
+    }
+
+    private static string WithoutCollectionOrdinal(string instancePart)
+    {
+        var ordinalStart = instancePart.LastIndexOf('&');
+        return ordinalStart >= 0 ? instancePart[..ordinalStart] : instancePart;
     }
 
     /// <summary>Groups collections per physical device; long collection = 20-byte reports, short = 7-byte.</summary>
