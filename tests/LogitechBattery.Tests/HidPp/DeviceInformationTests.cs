@@ -11,4 +11,12 @@ public class DeviceInformationTests
 
         Assert.Equal("1A2B3C4D", DeviceInformation.UnitIdOf(parameters));
     }
+
+    [Fact]
+    public void Unit_id_is_missing_when_the_params_are_too_short_to_hold_it()
+    {
+        byte[] parameters = [0x01, 0x1A, 0x2B];
+
+        Assert.Null(DeviceInformation.UnitIdOf(parameters));
+    }
 }

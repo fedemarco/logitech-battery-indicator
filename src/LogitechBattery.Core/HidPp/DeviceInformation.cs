@@ -9,12 +9,13 @@ internal static class DeviceInformation
     /// <summary>HID++ 2.0 error code "Busy": the device cannot answer right now, but will later. Every other error is permanent.</summary>
     public const byte BusyErrorCode = 0x08;
 
-    // Layout from the protocol (getDeviceInfo: entity count, unit ID, transport, model ID, ...).
-    // Not yet confirmed on this mouse, so the probe also logs the raw report.
+    // Layout (getDeviceInfo: entity count, unit ID, transport, model ID, ...), confirmed on the real mouse.
     private const int UnitIdOffset = 1;
     private const int UnitIdLength = 4;
 
-    /// <summary>Returns the unit ID of getDeviceInfo params as 8 uppercase hex characters.</summary>
-    public static string UnitIdOf(ReadOnlySpan<byte> parameters) =>
-        Convert.ToHexString(parameters.Slice(UnitIdOffset, UnitIdLength));
+    /// <summary>Returns the unit ID of getDeviceInfo params as 8 uppercase hex characters, or null when the params are too short to hold one.</summary>
+    public static string? UnitIdOf(ReadOnlySpan<byte> parameters) =>
+        parameters.Length < UnitIdOffset + UnitIdLength
+            ? null
+            : Convert.ToHexString(parameters.Slice(UnitIdOffset, UnitIdLength));
 }

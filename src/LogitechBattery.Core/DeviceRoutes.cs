@@ -21,7 +21,7 @@ internal sealed class DeviceRoutes
 
     public IReadOnlyList<BatteryTarget> All => _routes;
 
-    public bool IsBatteryEventSource(HidPpChannel channel, byte[] report) =>
+    public bool IsBatteryEventSource(IHidPpChannel channel, byte[] report) =>
         _routes.Any(route => route.Channel == channel && HidPpMessage.IsEventFrom(report, route.DeviceIndex, route.FeatureIndex));
 
     /// <summary>Forgets all routes, so the next discovery looks at every slot again.</summary>
@@ -40,7 +40,7 @@ internal sealed class DeviceRoutes
 
     public void Drop(BatteryTarget route) => KeepRoutes(other => other != route);
 
-    public void DropRoutesOn(HidPpChannel channel) => KeepRoutes(route => route.Channel != channel);
+    public void DropRoutesOn(IHidPpChannel channel) => KeepRoutes(route => route.Channel != channel);
 
     public void DropRoutesOnClosedChannels() => KeepRoutes(route => !route.Channel.IsClosed);
 
@@ -55,10 +55,10 @@ internal sealed class DeviceRoutes
     }
 
     /// <summary>Probes every slot that has no route yet. Returns the channels that failed (e.g. unplugged) while doing so.</summary>
-    public IReadOnlyList<HidPpChannel> Discover(IEnumerable<HidPpChannel> channels, CancellationToken cancellationToken)
+    public IReadOnlyList<IHidPpChannel> Discover(IEnumerable<IHidPpChannel> channels, CancellationToken cancellationToken)
     {
-        var failedChannels = new List<HidPpChannel>();
-        var channelsWithoutDirectDevice = new List<HidPpChannel>();
+        var failedChannels = new List<IHidPpChannel>();
+        var channelsWithoutDirectDevice = new List<IHidPpChannel>();
 
         // FF is tried on every channel before any receiver slot, so the cable route wins over a receiver route to the same mouse.
         foreach (var channel in channels.Where(channel => !channel.IsClosed))
@@ -80,7 +80,7 @@ internal sealed class DeviceRoutes
         return failedChannels;
     }
 
-    private ChannelPass DiscoverOn(HidPpChannel channel, IEnumerable<byte> deviceIndexes, CancellationToken cancellationToken)
+    private ChannelPass DiscoverOn(IHidPpChannel channel, IEnumerable<byte> deviceIndexes, CancellationToken cancellationToken)
     {
         try
         {
@@ -98,12 +98,12 @@ internal sealed class DeviceRoutes
         }
     }
 
-    private SlotState DiscoverSlot(Slot slot, HidPpChannel channel, CancellationToken cancellationToken)
+    private SlotState DiscoverSlot(Slot slot, IHidPpChannel channel, CancellationToken cancellationToken)
     {
         if (IsAlreadyKnown(slot))
             return SlotState.Occupied;
 
-        switch (DeviceDiscovery.Probe(channel, slot.DeviceIndex, cancellationToken))
+        switch (ProbeOrSkip(slot, channel, cancellationToken))
         {
             case SlotProbe.Found found:
                 Add(found.Target);
@@ -114,6 +114,21 @@ internal sealed class DeviceRoutes
                 return SlotState.Occupied;
             default:
                 return SlotState.Empty;
+        }
+    }
+
+    // One misbehaving device must not stop the others: it is logged once and not probed again until ForgetSkippedSlots.
+    private SlotProbe ProbeOrSkip(Slot slot, IHidPpChannel channel, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return DeviceDiscovery.Probe(channel, slot.DeviceIndex, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not (IOException or TimeoutException or OperationCanceledException))
+        {
+            AppLog.Write($"Skipping device at {slot.ChannelKey} devIdx {slot.DeviceIndex:X2}: probing failed: {ex}");
+            _slotsWithoutBattery.Add(slot);
+            return SlotProbe.NoDevice;
         }
     }
 

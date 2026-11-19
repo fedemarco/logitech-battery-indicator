@@ -4,7 +4,7 @@ using LogitechBattery.HidPp;
 namespace LogitechBattery;
 
 /// <summary>A device with Unified Battery found by discovery: the channel it answers on, its device and battery feature index, and who it is.</summary>
-internal sealed record BatteryTarget(HidPpChannel Channel, byte DeviceIndex, byte FeatureIndex, DeviceInfo Device)
+internal sealed record BatteryTarget(IHidPpChannel Channel, byte DeviceIndex, byte FeatureIndex, DeviceInfo Device)
 {
     public Slot Slot => new(Channel.Key, DeviceIndex);
 }
@@ -44,7 +44,7 @@ internal static class DeviceDiscovery
     }
 
     /// <summary>Throws IOException or TimeoutException when the channel itself fails.</summary>
-    public static SlotProbe Probe(HidPpChannel channel, byte deviceIndex, CancellationToken cancellationToken)
+    public static SlotProbe Probe(IHidPpChannel channel, byte deviceIndex, CancellationToken cancellationToken)
     {
         if (RequestDuringDiscovery(channel, HidPpMessage.BuildPing(deviceIndex), cancellationToken) is null)
             return SlotProbe.NoDevice;
@@ -70,9 +70,9 @@ internal static class DeviceDiscovery
 
     /// <summary>
     /// The unit ID (feature 0x0003). The route fallback when the device has no such feature, answers with an error,
-    /// or reports an invalid ID: those answers do not change on the next read. Only a missing answer or a Busy error is retried.
+    /// reports an invalid or too short ID: those answers do not change on the next read. Only a missing answer or a Busy error is retried.
     /// </summary>
-    private static Lookup<DeviceId> ReadId(HidPpChannel channel, byte deviceIndex, CancellationToken cancellationToken)
+    private static Lookup<DeviceId> ReadId(IHidPpChannel channel, byte deviceIndex, CancellationToken cancellationToken)
     {
         var routeFallback = Lookup<DeviceId>.Of(DeviceId.FromRoute(channel.ProductId, deviceIndex));
         var feature = FindFeatureIndex(channel, deviceIndex, DeviceInformation.FeatureId, cancellationToken);
@@ -94,7 +94,7 @@ internal static class DeviceDiscovery
     private static bool IsTransient(byte? errorCode) => errorCode is null or DeviceInformation.BusyErrorCode;
 
     /// <summary>Asks the root feature for the index of <paramref name="featureId"/>.</summary>
-    private static Lookup<byte> FindFeatureIndex(HidPpChannel channel, byte deviceIndex, ushort featureId, CancellationToken cancellationToken)
+    private static Lookup<byte> FindFeatureIndex(IHidPpChannel channel, byte deviceIndex, ushort featureId, CancellationToken cancellationToken)
     {
         var response = RequestDuringDiscovery(channel, HidPpMessage.BuildGetFeature(deviceIndex, featureId), cancellationToken);
         if (response is null)
@@ -105,7 +105,7 @@ internal static class DeviceDiscovery
     }
 
     /// <summary>Reads the DeviceName feature (0x0005); an empty name counts as not supported.</summary>
-    private static Lookup<string> ReadName(HidPpChannel channel, byte deviceIndex, CancellationToken cancellationToken)
+    private static Lookup<string> ReadName(IHidPpChannel channel, byte deviceIndex, CancellationToken cancellationToken)
     {
         var feature = FindFeatureIndex(channel, deviceIndex, DeviceName.FeatureId, cancellationToken);
         if (!feature.IsFound)
@@ -133,6 +133,6 @@ internal static class DeviceDiscovery
 
     private static byte NameLengthOf(byte[] getNameCountResponse) => HidPpMessage.ParamsOf(getNameCountResponse)[0];
 
-    private static byte[]? RequestDuringDiscovery(HidPpChannel channel, byte[] request, CancellationToken cancellationToken) =>
+    private static byte[]? RequestDuringDiscovery(IHidPpChannel channel, byte[] request, CancellationToken cancellationToken) =>
         channel.Exchange(request, Timeout, cancellationToken).Response;
 }

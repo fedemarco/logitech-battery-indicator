@@ -12,10 +12,10 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
 {
     private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(1);
 
-    private enum RouteOutcome { Answered, NoAnswer, Failed, ChannelLost }
+    internal enum RouteOutcome { Answered, NoAnswer, Failed, ChannelLost }
 
     /// <summary>What reading one route gave; <see cref="Status"/> is set only for <see cref="RouteOutcome.Answered"/>.</summary>
-    private readonly record struct RouteRead(RouteOutcome Outcome, BatteryStatus? Status = null);
+    internal readonly record struct RouteRead(RouteOutcome Outcome, BatteryStatus? Status = null);
 
     /// <summary>The outcome of one read attempt; <see cref="ChannelLost"/> asks for one immediate second attempt.</summary>
     private sealed record ReadPass(IReadOnlyList<DeviceReading> Readings, bool ChannelLost);
@@ -160,7 +160,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         return channelLost;
     }
 
-    private RouteRead ReadStatus(BatteryTarget route, DateTimeOffset now, CancellationToken cancellationToken)
+    internal static RouteRead ReadStatus(BatteryTarget route, DateTimeOffset now, CancellationToken cancellationToken)
     {
         try
         {
@@ -172,9 +172,14 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         {
             return new RouteRead(RouteOutcome.ChannelLost);
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            AppLog.Write($"getStatus of {route.Device.Name} failed: {ex}"); // one faulty device must not fail the reading of the others
+            return new RouteRead(RouteOutcome.Failed);
+        }
     }
 
-    private static RouteRead ReadAnswer(BatteryTarget route, HidPpAnswer answer, DateTimeOffset now)
+    internal static RouteRead ReadAnswer(BatteryTarget route, HidPpAnswer answer, DateTimeOffset now)
     {
         if (answer.ErrorCode is { } errorCode)
         {
@@ -218,19 +223,22 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         return new DeviceReading(device, status);
     }
 
-    private bool LoseChannels(IReadOnlyList<HidPpChannel> channels)
+    private bool LoseChannels(IReadOnlyList<IHidPpChannel> channels)
     {
         foreach (var channel in channels)
             Lost(channel);
         return channels.Count > 0;
     }
 
-    private void Lost(HidPpChannel channel)
+    private void Lost(IHidPpChannel lostChannel)
     {
-        AppLog.Write($"Device lost: {channel.Key}");
-        channel.Dispose();
-        _channels.Remove(channel);
-        _routes.DropRoutesOn(channel);
+        AppLog.Write($"Device lost: {lostChannel.Key}");
+        if (lostChannel is HidPpChannel channel) // discovery and routes know only the interface; every channel they get is one of ours
+        {
+            channel.Dispose();
+            _channels.Remove(channel);
+        }
+        _routes.DropRoutesOn(lostChannel);
         _rediscover = true;
     }
 

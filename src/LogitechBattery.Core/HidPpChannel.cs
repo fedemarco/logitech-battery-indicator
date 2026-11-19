@@ -13,7 +13,7 @@ internal readonly record struct HidPpAnswer(byte[]? Response, byte? ErrorCode)
 /// A HID++ device kept open. Its long and short collections are read on background threads, so every report is seen:
 /// answers on either collection (HID++ 1.0 errors arrive at once on the short one) and unsolicited notifications.
 /// </summary>
-internal sealed class HidPpChannel : IDisposable
+internal sealed class HidPpChannel : IHidPpChannel, IDisposable
 {
     private const int StreamWriteTimeoutMs = 200;
     private const byte FirstRotatingSoftwareId = 0x1; // 0x0 is for device events
@@ -92,8 +92,11 @@ internal sealed class HidPpChannel : IDisposable
         }
     }
 
-    private byte NextSoftwareId() =>
-        _softwareId = _softwareId >= LastRotatingSoftwareId ? FirstRotatingSoftwareId : (byte)(_softwareId + 1);
+    private byte NextSoftwareId() => _softwareId = NextSoftwareId(_softwareId);
+
+    /// <summary>The software id after <paramref name="current"/>: counts from 0x1 to 0xE, then wraps.</summary>
+    internal static byte NextSoftwareId(byte current) =>
+        current >= LastRotatingSoftwareId ? FirstRotatingSoftwareId : (byte)(current + 1);
 
     public void Dispose()
     {
@@ -107,7 +110,7 @@ internal sealed class HidPpChannel : IDisposable
             ? _shortStream ?? throw new InvalidOperationException("The device has no short HID++ collection.")
             : _longStream;
 
-    private static HidPpAnswer ToAnswer(byte[] request, byte[] report)
+    internal static HidPpAnswer ToAnswer(byte[] request, byte[] report)
     {
         var reply = HidPpMessage.Classify(request, report);
         return reply.Kind switch
