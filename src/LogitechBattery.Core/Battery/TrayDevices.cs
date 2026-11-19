@@ -35,15 +35,24 @@ public sealed record TrayDevices(
             MenuItemsOf(listed, tray, names));
     }
 
-    // The placeholder is not a device; a saved device that was not read is listed so the user can see it and switch away from it.
+    // Devices seen earlier in this session stay known after they go away; listing them would show ghosts. The tray device stays
+    // listed even then (also a saved device that was not read), so the user can see it and switch away from it.
+    // The placeholder is not a device.
     private static List<DeviceReading> ListedDevices(IReadOnlyList<DeviceReading> readings, DeviceReading tray)
     {
-        var listed = readings.Where(reading => reading.Device.Id != DeviceInfo.NoDeviceYet.Id).ToList();
+        var listed = readings
+            .Where(reading => reading.Device.Id != DeviceInfo.NoDeviceYet.Id)
+            .Where(reading => AnswersNow(reading.Status) || reading.Device.Id == tray.Device.Id)
+            .ToList();
         var trayIsMissing = tray.Device.Id != DeviceInfo.NoDeviceYet.Id && listed.All(reading => reading.Device.Id != tray.Device.Id);
         if (trayIsMissing)
             listed.Add(tray);
         return listed;
     }
+
+    // A failed read (no status) still means the device answered.
+    private static bool AnswersNow(BatteryStatus? status) =>
+        status?.Connection is not (ConnectionState.Asleep or ConnectionState.NotFound);
 
     private static List<OtherDevice> OthersOf(List<DeviceReading> listed, DeviceReading tray, IReadOnlyDictionary<DeviceId, string> names) =>
         listed

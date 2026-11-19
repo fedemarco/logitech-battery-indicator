@@ -45,7 +45,7 @@ What's new: see the [releases](https://github.com/fedemarco/logitech-battery-ind
 |---|---|
 | Hover the tray icon | Status, exact percentage, time left and app version |
 | Left-click the tray icon | Opens the history panel; Esc or a click elsewhere closes it |
-| Right-click the tray icon | Menu: Show in tray (only with several devices: choose which device the icon shows), Notifications (low battery level, fully charged), Start with Windows, Clear history…, Exit |
+| Right-click the tray icon | Menu: Show in tray (only when more than one device is connected, or the device in the tray is off: choose which device the icon shows), Notifications (low battery level, fully charged), Start with Windows, Clear history…, Exit |
 
 Icon colors: green from 40 %, yellow from 20 %, red below 20 %. A separate "unknown" icon means the mouse is asleep, switched off or not found.
 

@@ -36,14 +36,35 @@ public class TrayDevicesTests
         Assert.Equal([new OtherDevice("G915", keyboardStatus)], devices.Others);
     }
 
+    [Theory]
+    [InlineData(ConnectionState.Asleep)]
+    [InlineData(ConnectionState.NotFound)]
+    public void A_device_that_is_not_there_is_hidden_from_the_menu_and_the_tooltip(ConnectionState connection)
+    {
+        var missing = TestData.Status(percent: null, connection: connection);
+
+        var devices = Build([Mouse(TestData.Status(85)), Keyboard(missing)], saved: MouseId);
+
+        Assert.Equal([MouseId], devices.Items.Select(item => item.Id));
+        Assert.Empty(devices.Others);
+    }
+
     [Fact]
-    public void Menu_texts_say_asleep_and_not_found_in_lower_case()
+    public void An_asleep_tray_device_stays_listed_in_lower_case_so_the_user_can_switch_away()
     {
         var asleep = TestData.Status(percent: null, connection: ConnectionState.Asleep);
 
-        var devices = Build([Mouse(TestData.Status(85)), Keyboard(asleep)]);
+        var devices = Build([Mouse(TestData.Status(85)), Keyboard(asleep)], saved: KeyboardId);
 
         Assert.Equal("G915 · asleep", devices.Items[1].Text);
+    }
+
+    [Fact]
+    public void A_device_whose_read_failed_is_still_listed()
+    {
+        var devices = Build([Mouse(TestData.Status(85)), Keyboard(status: null)], saved: MouseId);
+
+        Assert.Equal([MouseId, KeyboardId], devices.Items.Select(item => item.Id));
     }
 
     [Fact]
