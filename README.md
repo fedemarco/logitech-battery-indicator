@@ -10,8 +10,9 @@ The tray icon shows the charge at a glance; hover it for the exact percentage. T
 
 ## Features
 
-- **Battery in the tray** – the icon shows the level and whether the mouse is charging; the tooltip shows the exact percentage.
-- **Instant updates** – the tray changes within about a second when the mouse sleeps, wakes, is switched off or on, or when the receiver or cable is plugged in or out.
+- **Battery in the tray** – the icon shows the level and whether the device is charging; the tooltip shows the exact percentage.
+- **Several devices** – every supported device on every receiver and cable is read, also two receivers of the same model. Each device has its own notifications and history; **Show in tray** chooses the one the icon shows, and the tooltip lists the others.
+- **Instant updates** – the tray changes within about a second when a device sleeps, wakes, is switched off or on, or when the receiver or cable is plugged in or out.
 - **Notifications** – a Windows notification when the battery is low (15 % by default, 10 % or 20 % in the tray menu), critical (5 %) and fully charged (can be switched off in the tray menu).
 - **Start with Windows** – on by default, can be switched off in the tray menu. No admin rights needed.
 - **History panel** – left-click the tray icon for a 24 h / 7 day graph of the battery level and the time of the last charge.
@@ -24,7 +25,7 @@ The tray icon shows the charge at a glance; hover it for the exact percentage. T
 ## Requirements
 
 - Windows, 64-bit.
-- A Logitech PRO X2 SUPERSTRIKE mouse, connected through its Lightspeed receiver or the USB cable. Other Logitech devices that report their battery with HID++ Unified Battery are read too: Lightspeed is tested; Bolt, Unifying and Bluetooth are not tested.
+- A Logitech device that reports its battery with HID++ Unified Battery, connected through a Lightspeed receiver or a USB cable. Tested with the PRO X2 SUPERSTRIKE and the PRO X 2 mice, also both at once on two receivers. Bolt, Unifying and Bluetooth are not tested. A device that reports its battery another way appears in `log.txt` as `Skipping device … reason=noUnifiedBattery`; to ask for support, open an issue with its `--probe` report (see Troubleshooting).
 
 No .NET installation is needed: the app is a single self-contained `.exe` (about 107 MB, because it contains the .NET runtime uncompressed; this keeps the app at about 12 MB of RAM instead of about 50 MB).
 
@@ -54,7 +55,7 @@ What's new: see the [releases](https://github.com/fedemarco/logitech-battery-ind
 | Left-click the tray icon | Opens the history panel; Esc or a click elsewhere closes it |
 | Right-click the tray icon | Menu: Show in tray (only when more than one device is connected, or the device in the tray is off: choose which device the icon shows), Notifications (low battery level, fully charged, new app versions), Check for updates…, Start with Windows, Clear history…, Exit |
 
-Icon colors: green from 40 %, yellow from 20 %, red below 20 %. A separate "unknown" icon means the mouse is asleep, switched off or not found.
+Icon colors: green from 40 %, yellow from 20 %, red below 20 %. A separate "unknown" icon means the device in the tray is asleep, switched off or not found.
 
 ![The tray icon: a green battery gauge](docs/tray-icon.png)
 
@@ -86,11 +87,11 @@ If you keep the exe in another folder, delete it too.
 
 ## Troubleshooting
 
-If the tray shows "Not found" while the mouse works, wake it (move it) and wait a few seconds. If it stays that way, these options help to find the cause. Run them from PowerShell in the folder of the exe:
+If the tray shows "Not found" while the device works, wake it (move it or press a key) and wait a few seconds. If it stays that way, these options help to find the cause. Run them from PowerShell in the folder of the exe:
 
 ```powershell
 .\LogitechBattery.exe --probe    # lists the Logitech devices and what they report (probe.txt)
-.\LogitechBattery.exe --listen   # records the messages from the mouse and receiver until you click OK (listen.txt)
+.\LogitechBattery.exe --listen   # records the messages from the devices and receivers until you click OK (listen.txt)
 .\LogitechBattery.exe --mock     # runs with a simulated battery, to check the tray and notifications
 ```
 
