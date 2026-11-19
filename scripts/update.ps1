@@ -51,7 +51,14 @@ try {
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     $target = Join-Path $InstallDir 'LogitechBattery.exe'
-    Copy-Item $exe $target -Force
+    # Windows can keep the exe locked for a moment after the process has exited, so the copy is retried briefly.
+    for ($attempt = 1; ; $attempt++) {
+        try { Copy-Item $exe $target -Force -ErrorAction Stop; break }
+        catch [System.IO.IOException] {
+            if ($attempt -ge 10) { throw }
+            Start-Sleep -Milliseconds 500
+        }
+    }
     Start-Process $target
 
     Write-Host "Installed $installed to $target"
