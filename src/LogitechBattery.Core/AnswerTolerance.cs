@@ -4,68 +4,43 @@ namespace LogitechBattery;
 
 /// <summary>
 /// Decides when a device that misses a read counts as asleep. A mouse in light sleep answers some reads and misses others
-/// for minutes before the receiver reports the link down, so one miss keeps the last answer. Changed only under the provider's read lock.
+/// for minutes before the receiver reports the link down, so after a missed read the last answer is kept until the link goes down
+/// or the answer is too old. Times are monotonic milliseconds (<see cref="Environment.TickCount64"/>), so a clock change cannot matter.
+/// Changed only under the provider's read lock.
 /// </summary>
 internal sealed class AnswerTolerance
 {
-    // Two misses in a row: one miss is common for a mouse in light sleep, two mean it is not coming back soon.
-    internal const int MissedReadsInARowThatMeanNotAnswering = 2;
+    // The receiver reports a link down after about 5 to 7 minutes of idle. The cap covers a link down that never arrives (e.g. out of range).
+    internal const long MaxAnswerAgeMs = 10 * 60 * 1000;
 
-    private readonly Dictionary<DeviceId, BatteryStatus> _lastAnswers = [];
-    private readonly Dictionary<DeviceId, int> _missedReadsInARow = [];
-    private readonly HashSet<DeviceId> _missedInThisRead = [];
+    private readonly record struct Answer(BatteryStatus Status, long AtMs);
 
-    /// <summary>
-    /// Call once per read. A read may run a second pass after a lost channel; a device counts as having missed only once per read,
-    /// however many passes it missed in.
-    /// </summary>
-    public void StartRead() => _missedInThisRead.Clear();
+    private readonly Dictionary<DeviceId, Answer> _lastAnswers = [];
 
-    public void Answered(DeviceId device, BatteryStatus status)
-    {
-        _lastAnswers[device] = status;
-        _missedReadsInARow.Remove(device);
-        _missedInThisRead.Remove(device);
-    }
+    public void Answered(DeviceId device, BatteryStatus status, long nowMs) => _lastAnswers[device] = new Answer(status, nowMs);
 
-    /// <summary>The device gave an error or an unreadable answer: it is not asleep, and earlier misses no longer count.</summary>
+    /// <summary>The device gave an error or an unreadable answer: it is not asleep, so nothing is kept.</summary>
     public void Failed(DeviceId device) => Forget(device);
 
     /// <summary>Forgets everything about the device, so a later status is never kept from before its channel was lost.</summary>
-    public void Forget(DeviceId device)
-    {
-        _lastAnswers.Remove(device);
-        _missedReadsInARow.Remove(device);
-        _missedInThisRead.Remove(device);
-    }
+    public void Forget(DeviceId device) => _lastAnswers.Remove(device);
 
-    public void Clear()
-    {
-        _lastAnswers.Clear();
-        _missedReadsInARow.Clear();
-        _missedInThisRead.Clear();
-    }
+    public void Clear() => _lastAnswers.Clear();
 
     /// <summary>
     /// The status to keep reporting after a missed read, or null when the device is not answering (the caller drops its route).
-    /// A device that is not answering is forgotten, so it gets its full tolerance when it is found again.
+    /// A device that is not answering is forgotten, so an old answer is never kept after it is found again.
     /// </summary>
-    public BatteryStatus? StatusToKeepAfterMissedRead(DeviceId device, bool linkWentDown)
+    public BatteryStatus? KeepOrForgetAfterMissedRead(DeviceId device, bool linkWentDown, long nowMs)
     {
-        var missedReads = CountMissedRead(device);
-        if (linkWentDown || missedReads >= MissedReadsInARowThatMeanNotAnswering)
+        var hasRecentAnswer = _lastAnswers.TryGetValue(device, out var lastAnswer) && IsRecent(lastAnswer, nowMs);
+        if (linkWentDown || !hasRecentAnswer)
         {
             Forget(device);
             return null;
         }
-        return _lastAnswers.GetValueOrDefault(device);
+        return lastAnswer.Status;
     }
 
-    private int CountMissedRead(DeviceId device)
-    {
-        var missedReads = _missedReadsInARow.GetValueOrDefault(device);
-        if (_missedInThisRead.Add(device))
-            _missedReadsInARow[device] = ++missedReads;
-        return missedReads;
-    }
+    private static bool IsRecent(Answer answer, long nowMs) => nowMs - answer.AtMs < MaxAnswerAgeMs;
 }

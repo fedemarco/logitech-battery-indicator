@@ -93,7 +93,6 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         {
             try
             {
-                _answerTolerance.StartRead();
                 // A lost channel is followed by one immediate rediscovery (e.g. cable unplugged while the receiver is still there).
                 var pass = ReadCore(cancellationToken);
                 if (pass.ChannelLost)
@@ -192,7 +191,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     private void KeepAnswer(BatteryTarget route, BatteryStatus status, Dictionary<DeviceId, BatteryStatus?> statuses)
     {
         statuses[route.Device.Id] = status;
-        _answerTolerance.Answered(route.Device.Id, status);
+        _answerTolerance.Answered(route.Device.Id, status, Environment.TickCount64);
     }
 
     private void ReportFailure(BatteryTarget route, Dictionary<DeviceId, BatteryStatus?> statuses)
@@ -204,7 +203,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
 
     private void KeepOrDropMissedRoute(BatteryTarget route, bool linkWentDown, Dictionary<DeviceId, BatteryStatus?> statuses)
     {
-        if (_answerTolerance.StatusToKeepAfterMissedRead(route.Device.Id, linkWentDown) is { } keptStatus)
+        if (_answerTolerance.KeepOrForgetAfterMissedRead(route.Device.Id, linkWentDown, Environment.TickCount64) is { } keptStatus)
         {
             statuses[route.Device.Id] = keptStatus;
             return;
