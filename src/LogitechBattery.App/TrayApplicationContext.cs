@@ -85,7 +85,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon.BalloonTipClicked += OnBalloonTipClicked;
 
         _timer = StartPollTimer(_isSimulator ? MockPollIntervalMs : PollIntervalMs);
-        _followUp.Tick += OnFollowUpTickAsync;
+        _followUp.Tick += OnFollowUpTick;
         _updateNotifier.ApplySetting();
         if (provider is HidPpBatteryProvider hid)
         {
@@ -149,7 +149,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 mock.Mode = mode;
                 foreach (var other in modeItems)
                     other.Checked = (MockMode)other.Tag! == mode;
-                _ = RefreshAsync();
+                RefreshWithoutWaiting();
             }
 
             item.Click += OnSimulatorModeClicked;
@@ -169,7 +169,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             mock.SeveralDevices = !mock.SeveralDevices;
             item.Checked = mock.SeveralDevices;
-            _ = RefreshAsync();
+            RefreshWithoutWaiting();
         }
 
         item.Click += OnSeveralDevicesClicked;
@@ -237,7 +237,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void ApplyAlertSettings(AlertSettings updated)
     {
         SaveSettings(_settings with { Alerts = updated }, ShowWarning);
-        _ = RefreshAsync(); // a new level is checked against the current battery at once
+        RefreshWithoutWaiting(); // a new level is checked against the current battery at once
     }
 
     private void ToggleCheckForUpdates()
@@ -293,14 +293,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
         return timer;
     }
 
-    private void OnPollTimerTick(object? sender, EventArgs e) => _ = RefreshAsync();
+    private void OnPollTimerTick(object? sender, EventArgs e) => RefreshWithoutWaiting();
 
     // First refresh once the message loop runs, so awaited reads resume on the UI thread.
     private void OnFirstIdle(object? sender, EventArgs e)
     {
         Application.Idle -= OnFirstIdle;
         _ui ??= SynchronizationContext.Current;
-        _ = RefreshAsync();
+        RefreshWithoutWaiting();
     }
 
     // Background thread: hop to the UI thread and restart the follow-up reads.
@@ -327,23 +327,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private async void OnFollowUpTickAsync(object? sender, EventArgs e)
-    {
-        try
-        {
-            _followUp.Stop();
-            var generation = _followUpSchedule.Generation;
-            var (ran, status) = await RefreshAsync();
-            if (_exited)
-                return;
+    private void OnFollowUpTick(object? sender, EventArgs e) =>
+        BackgroundWork.RunWithoutWaiting(FollowUpReadAsync, "Follow-up read failed");
 
-            if (_followUpSchedule.Finish(generation, ran, status) is { } delayMs)
-                StartFollowUpTimer(delayMs);
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error("Follow-up read failed", AppLog.FailureWithStack(ex)); // never escape an async void handler
-        }
+    private async Task FollowUpReadAsync()
+    {
+        _followUp.Stop();
+        var generation = _followUpSchedule.Generation;
+        var (ran, status) = await RefreshAsync();
+        if (_exited)
+            return;
+
+        if (_followUpSchedule.Finish(generation, ran, status) is { } delayMs)
+            StartFollowUpTimer(delayMs);
     }
 
     private void StartFollowUpTimer(int delayMs)
@@ -352,6 +348,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _followUp.Interval = delayMs;
         _followUp.Start();
     }
+
+    private void RefreshWithoutWaiting() =>
+        BackgroundWork.RunWithoutWaiting(RefreshAsync, "Battery refresh failed");
 
     /// <summary>Ran is false when skipped; Status is null when skipped or the read failed.</summary>
     private async Task<(bool Ran, BatteryStatus? Status)> RefreshAsync()

@@ -13,6 +13,7 @@ internal sealed class UpdateNotifier : IDisposable
     private const int CheckIntervalMs = 24 * 60 * 60 * 1000;
     private const string AutomaticTrigger = "automatic";
     private const string ManualTrigger = "manual";
+    private const string UpdateCheckFailedMessage = "Update check failed";
 
     private readonly string? _informationalVersion;
     private readonly Func<bool> _isEnabled;
@@ -50,11 +51,22 @@ internal sealed class UpdateNotifier : IDisposable
     {
         var item = new ToolStripMenuItem("Check for updates…");
 
-        async void CheckForUpdatesFromMenu(object? sender, EventArgs e)
+        async Task CheckManuallyThenEnableItemAsync()
+        {
+            try
+            {
+                await CheckManuallyAsync();
+            }
+            finally
+            {
+                item.Enabled = true;
+            }
+        }
+
+        void CheckForUpdatesFromMenu(object? sender, EventArgs e)
         {
             item.Enabled = false;
-            await RunGuardedAsync(CheckManuallyAsync);
-            item.Enabled = true;
+            BackgroundWork.RunWithoutWaiting(CheckManuallyThenEnableItemAsync, UpdateCheckFailedMessage);
         }
 
         item.Click += CheckForUpdatesFromMenu;
@@ -84,23 +96,10 @@ internal sealed class UpdateNotifier : IDisposable
         _timer = null;
     }
 
-    private async void OnTimerTick(object? sender, EventArgs e)
+    private void OnTimerTick(object? sender, EventArgs e)
     {
         _timer!.Interval = CheckIntervalMs; // the first check came 2 minutes after the start, the next ones follow daily
-        await RunGuardedAsync(CheckAutomaticallyAsync);
-    }
-
-    // Both callers are async void event handlers: an exception here would end the app.
-    private static async Task RunGuardedAsync(Func<Task> check)
-    {
-        try
-        {
-            await check();
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error("Update check failed", AppLog.FailureWithStack(ex));
-        }
+        BackgroundWork.RunWithoutWaiting(CheckAutomaticallyAsync, UpdateCheckFailedMessage);
     }
 
     private async Task CheckAutomaticallyAsync()
