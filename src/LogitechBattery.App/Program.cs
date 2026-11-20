@@ -22,13 +22,17 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-        Application.ThreadException += (_, e) => AppLog.Error("Unhandled UI exception", AppLog.FailureWithStack(e.Exception)); // keep the tray app running
+        Application.ThreadException += OnUiThreadException;
         var useMock = args.Contains(MockFlag);
         var version = AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()) ?? "unknown";
         var mode = useMock ? "mock" : "HID++";
         AppLog.Info("Started LogitechBattery", ("version", version), ("mode", mode));
         Application.Run(CreateTrayContext(useMock));
     }
+
+    // Logging the exception and returning keeps the tray app running.
+    private static void OnUiThreadException(object sender, ThreadExceptionEventArgs e) =>
+        AppLog.Error("Unhandled UI exception", AppLog.FailureWithStack(e.Exception));
 
     // ThreadException only sees exceptions inside the message loop, so a failing constructor must be logged here.
     private static TrayApplicationContext CreateTrayContext(bool useMock)

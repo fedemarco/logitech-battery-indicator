@@ -49,7 +49,15 @@ internal sealed class UpdateNotifier : IDisposable
     public ToolStripMenuItem BuildCheckItem()
     {
         var item = new ToolStripMenuItem("Check for updates…");
-        item.Click += (_, _) => OnCheckItemClick(item);
+
+        async void CheckForUpdatesFromMenu(object? sender, EventArgs e)
+        {
+            item.Enabled = false;
+            await RunGuardedAsync(CheckManuallyAsync);
+            item.Enabled = true;
+        }
+
+        item.Click += CheckForUpdatesFromMenu;
         return item;
     }
 
@@ -82,14 +90,7 @@ internal sealed class UpdateNotifier : IDisposable
         await RunGuardedAsync(CheckAutomaticallyAsync);
     }
 
-    private async void OnCheckItemClick(ToolStripMenuItem item)
-    {
-        item.Enabled = false;
-        await RunGuardedAsync(CheckManuallyAsync);
-        item.Enabled = true;
-    }
-
-    // Both callers are async void: an exception here would end the app.
+    // Both callers are async void event handlers: an exception here would end the app.
     private static async Task RunGuardedAsync(Func<Task> check)
     {
         try

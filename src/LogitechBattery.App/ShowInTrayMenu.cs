@@ -14,7 +14,7 @@ internal sealed class ShowInTrayMenu
     {
         _choose = choose;
         Item = new ToolStripMenuItem("Show in tray") { Visible = false };
-        Item.DropDownOpening += (_, _) => ShowItems();
+        Item.DropDownOpening += ShowDeviceChoices;
         _ = Item.DropDown; // its entries come only when it opens, so the submenu is created now for MenuStaysOpenForToggles to find
     }
 
@@ -26,17 +26,20 @@ internal sealed class ShowInTrayMenu
         Item.Visible = items.Count >= MinDevicesToShow;
     }
 
-    private void ShowItems()
+    private void ShowDeviceChoices(object? sender, EventArgs e)
     {
         Item.DropDownItems.Clear();
         foreach (var device in _items)
         {
             var choice = new ToggleMenuItem(device.Text) { Checked = device.IsTray };
-            choice.Click += (_, _) =>
+
+            void OnDeviceChoiceClicked(object? sender, EventArgs e)
             {
                 _choose(device.Id);
                 ShowOnlyChecked(choice);
-            };
+            }
+
+            choice.Click += OnDeviceChoiceClicked;
             Item.DropDownItems.Add(choice);
         }
     }

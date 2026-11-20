@@ -18,29 +18,39 @@ internal static class NotificationsMenu
             RefreshMarks();
         }
 
-        foreach (var percent in AlertSettings.LowChoices)
-        {
-            var choice = new ToggleMenuItem($"{percent}%") { Tag = percent };
-            choice.Click += (_, _) => ApplyAndRefresh(current() with { LowPercent = percent });
-            lowItem.DropDownItems.Add(choice);
-        }
-        fullItem.Click += (_, _) => ApplyAndRefresh(current() with { FullChargeAlert = !current().FullChargeAlert });
-        updatesItem.Click += (_, _) =>
+        void ToggleFullChargeAlert(object? sender, EventArgs e) =>
+            ApplyAndRefresh(current() with { FullChargeAlert = !current().FullChargeAlert });
+
+        void ToggleUpdateCheck(object? sender, EventArgs e)
         {
             toggleCheckForUpdates();
             RefreshMarks();
-        };
+        }
 
         // A quick click right after passing over "Low battery" was lost while its submenu was still open (seen on Windows),
         // so the submenu closes as soon as the pointer reaches one of the switches.
-        fullItem.MouseEnter += (_, _) => lowItem.HideDropDown();
-        updatesItem.MouseEnter += (_, _) => lowItem.HideDropDown();
+        void HideLowBatterySubmenu(object? sender, EventArgs e) => lowItem.HideDropDown();
+
+        void RefreshNotificationMarks(object? sender, EventArgs e) => RefreshMarks();
+
+        foreach (var percent in AlertSettings.LowChoices)
+        {
+            void ChooseLowPercent(object? sender, EventArgs e) => ApplyAndRefresh(current() with { LowPercent = percent });
+
+            var choice = new ToggleMenuItem($"{percent}%") { Tag = percent };
+            choice.Click += ChooseLowPercent;
+            lowItem.DropDownItems.Add(choice);
+        }
+        fullItem.Click += ToggleFullChargeAlert;
+        updatesItem.Click += ToggleUpdateCheck;
+        fullItem.MouseEnter += HideLowBatterySubmenu;
+        updatesItem.MouseEnter += HideLowBatterySubmenu;
 
         var menu = new ToolStripMenuItem("Notifications");
         menu.DropDownItems.Add(lowItem);
         menu.DropDownItems.Add(fullItem);
         menu.DropDownItems.Add(updatesItem);
-        menu.DropDownOpening += (_, _) => RefreshMarks();
+        menu.DropDownOpening += RefreshNotificationMarks;
         return menu;
     }
 

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Reflection;
 using Microsoft.Win32;
 using LogitechBattery.Battery;
@@ -81,7 +82,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
 
         _notifyIcon.MouseClick += OnTrayClick;
-        _notifyIcon.BalloonTipClicked += (_, _) => _updateNotifier.OnBalloonClicked(); // raised for every balloon
+        _notifyIcon.BalloonTipClicked += OnBalloonTipClicked;
 
         _timer = StartPollTimer(_isSimulator ? MockPollIntervalMs : PollIntervalMs);
         _followUp.Tick += OnFollowUpTickAsync;
@@ -94,6 +95,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         Application.Idle += OnFirstIdle;
     }
+
+    // Raised for every balloon; the notifier decides whether it was the update balloon.
+    private void OnBalloonTipClicked(object? sender, EventArgs e) => _updateNotifier.OnBalloonClicked();
 
     private ContextMenuStrip BuildMenu()
     {
@@ -114,15 +118,20 @@ internal sealed class TrayApplicationContext : ApplicationContext
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(_updateNotifier.BuildCheckItem());
             var startItem = BuildStartupItem();
-            menu.Opening += (_, _) => startItem.Checked = AutoStart.IsEnabled();
+
+            void RefreshStartWithWindowsMark(object? sender, CancelEventArgs e) => startItem.Checked = AutoStart.IsEnabled();
+
+            menu.Opening += RefreshStartWithWindowsMark;
             menu.Items.Add(startItem);
             if (_histories is not null)
                 menu.Items.Add(BuildClearHistoryItem(_histories));
         }
-        menu.Items.Add("Exit", null, (_, _) => ExitApp());
+        menu.Items.Add("Exit", null, OnExitClicked);
         MenuStaysOpenForToggles.Attach(menu);
         return menu;
     }
+
+    private void OnExitClicked(object? sender, EventArgs e) => ExitApp();
 
     private ToolStripMenuItem BuildNotificationsMenu() =>
         NotificationsMenu.Build(() => _settings.Alerts, ApplyAlertSettings, () => _settings.CheckForUpdates, ToggleCheckForUpdates);
@@ -134,13 +143,16 @@ internal sealed class TrayApplicationContext : ApplicationContext
         foreach (var (label, mode) in SimulatorItems)
         {
             var item = new ToggleMenuItem(label) { Checked = mock.Mode == mode, Tag = mode };
-            item.Click += (_, _) =>
+
+            void OnSimulatorModeClicked(object? sender, EventArgs e)
             {
                 mock.Mode = mode;
                 foreach (var other in modeItems)
                     other.Checked = (MockMode)other.Tag! == mode;
                 _ = RefreshAsync();
-            };
+            }
+
+            item.Click += OnSimulatorModeClicked;
             modeItems.Add(item);
             simulator.DropDownItems.Add(item);
         }
@@ -152,23 +164,29 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private ToolStripMenuItem BuildSeveralDevicesItem(MockBatteryProvider mock)
     {
         var item = new ToggleMenuItem("Several devices") { Checked = mock.SeveralDevices };
-        item.Click += (_, _) =>
+
+        void OnSeveralDevicesClicked(object? sender, EventArgs e)
         {
             mock.SeveralDevices = !mock.SeveralDevices;
             item.Checked = mock.SeveralDevices;
             _ = RefreshAsync();
-        };
+        }
+
+        item.Click += OnSeveralDevicesClicked;
         return item;
     }
 
     private static ToolStripMenuItem BuildStartupItem()
     {
         var startItem = new ToggleMenuItem("Start with Windows");
-        startItem.Click += (_, _) =>
+
+        void OnStartWithWindowsClicked(object? sender, EventArgs e)
         {
             ToggleStartWithWindows();
             startItem.Checked = AutoStart.IsEnabled();
-        };
+        }
+
+        startItem.Click += OnStartWithWindowsClicked;
         return startItem;
     }
 
@@ -188,27 +206,32 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private ToolStripMenuItem BuildClearHistoryItem(DeviceHistories histories)
     {
         var clearItem = new ToolStripMenuItem("Clear history…");
-        clearItem.Click += (_, _) =>
-        {
-            var answer = MessageBox.Show(
-                "Delete all battery history? This cannot be undone.",
-                AppName,
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning,
-                MessageBoxDefaultButton.Button2);
-            if (answer != DialogResult.Yes)
-                return;
 
-            var cleared = histories.ClearAll();
-            if (cleared)
-            {
-                _drainPercentPerDay = null;
-                RefreshTooltip();
-            }
-            else
-                ShowWarning("Couldn't delete the battery history. Close any program that has a history file open and try again.");
-        };
+        void OnClearHistoryClicked(object? sender, EventArgs e) => ConfirmAndClearHistory(histories);
+
+        clearItem.Click += OnClearHistoryClicked;
         return clearItem;
+    }
+
+    private void ConfirmAndClearHistory(DeviceHistories histories)
+    {
+        var answer = MessageBox.Show(
+            "Delete all battery history? This cannot be undone.",
+            AppName,
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
+        if (answer != DialogResult.Yes)
+            return;
+
+        var cleared = histories.ClearAll();
+        if (cleared)
+        {
+            _drainPercentPerDay = null;
+            RefreshTooltip();
+        }
+        else
+            ShowWarning("Couldn't delete the battery history. Close any program that has a history file open and try again.");
     }
 
     private void ApplyAlertSettings(AlertSettings updated)
@@ -265,10 +288,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private System.Windows.Forms.Timer StartPollTimer(int intervalMs)
     {
         var timer = new System.Windows.Forms.Timer { Interval = intervalMs };
-        timer.Tick += (_, _) => _ = RefreshAsync();
+        timer.Tick += OnPollTimerTick;
         timer.Start();
         return timer;
     }
+
+    private void OnPollTimerTick(object? sender, EventArgs e) => _ = RefreshAsync();
 
     // First refresh once the message loop runs, so awaited reads resume on the UI thread.
     private void OnFirstIdle(object? sender, EventArgs e)
@@ -489,13 +514,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var overlay = new OverlayForm(_history, _isSimulator);
         if (_devices is { } devices)
             overlay.SetStatus(devices.Tray.Status, devices.TrayName, devices.StatusLine, _drainPercentPerDay);
-        overlay.FormClosed += (_, _) =>
-        {
-            _overlay = null;
-            _overlayClosedAtMs = Environment.TickCount64;
-        };
+        overlay.FormClosed += OnOverlayClosed;
         overlay.Show();
         _overlay = overlay; // after Show, so a failing Show leaves no half-open panel behind
+    }
+
+    private void OnOverlayClosed(object? sender, FormClosedEventArgs e)
+    {
+        _overlay = null;
+        _overlayClosedAtMs = Environment.TickCount64;
     }
 
     private void ReplaceIcon(TrayIndicator indicator, int iconSize)
