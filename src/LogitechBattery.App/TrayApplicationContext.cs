@@ -1,29 +1,11 @@
-using System.ComponentModel;
 using System.Reflection;
-using Microsoft.Win32;
 using LogitechBattery.Battery;
-using Timer = System.Windows.Forms.Timer;
 
 namespace LogitechBattery;
 
 internal sealed class TrayApplicationContext : ApplicationContext
 {
-    private static readonly (string Label, MockMode Mode)[] SimulatorItems =
-    [
-        ("Auto cycle", MockMode.Auto),
-        ("85% discharging", MockMode.Discharging85),
-        ("25% discharging", MockMode.Discharging25),
-        ("10% discharging", MockMode.Discharging10),
-        ("60% charging", MockMode.Charging60),
-        ("100% full", MockMode.Full100),
-        ("Asleep", MockMode.Asleep),
-        ("Not found", MockMode.NotFound),
-    ];
-
     private const long ReopenGuardMs = 300; // focus loss closes the panel just before the tray click that caused it arrives
-    private const int MockPollIntervalMs = 1000;
-    private const int PollIntervalMs = 60_000;
-    private const int BalloonTimeoutMs = 10_000;
     internal const string AppName = "Logitech Battery";
     private static readonly TimeSpan StuckReadAfter = TimeSpan.FromSeconds(60);
 
@@ -37,18 +19,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private DeviceId? _mockTrayDevice; // the simulator's choice lives here so that no save can write it to settings.ini
     private readonly DeviceTracker _tracker;
     private readonly bool _isSimulator;
-    private readonly FollowUpSchedule _followUpSchedule = new();
     private readonly StuckReadWatch _stuckReadWatch = new(StuckReadAfter);
 
-    private readonly NotifyIcon _notifyIcon;
-    private readonly Timer _timer;
-    private readonly Timer _followUp = new();
+    private readonly TrayPresenter _presenter;
+    private readonly RefreshScheduler _scheduler;
     private readonly UpdateNotifier _updateNotifier;
-    private volatile SynchronizationContext? _ui;
-
-    private Icon? _icon;
-    private int _iconSize;
-    private TrayIndicator? _indicator;
     private readonly ShowInTrayMenu _showInTrayMenu;
     private OverlayForm? _overlay;
     private long? _overlayClosedAtMs;
@@ -66,8 +41,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _settingsFile = settingsFile;
         _settings = settingsFile.Load();
         _tracker = new DeviceTracker(_settings.DeviceNames);
-        if (SynchronizationContext.Current is WindowsFormsSynchronizationContext ui)
-            _ui = ui; // otherwise captured on the first idle
 
         _isSimulator = provider is MockBatteryProvider;
         _updateNotifier = new UpdateNotifier(_informationalVersion, () => _settings.CheckForUpdates, _isSimulator, ShowUpdateBalloon);
@@ -75,167 +48,32 @@ internal sealed class TrayApplicationContext : ApplicationContext
             AutoStart.EnableOnFirstRun();
 
         _showInTrayMenu = new ShowInTrayMenu(ChooseTrayDevice);
-        _notifyIcon = new NotifyIcon
-        {
-            Icon = SystemIcons.Application, // replaced by the first refresh
-            Text = TrayTooltip.Build(
-                DeviceInfo.NoDeviceYet.Name, statusLine: null, remainingText: null, otherDevices: [], _displayVersion),
-            ContextMenuStrip = BuildMenu(),
-            Visible = true,
-        };
+        var menu = TrayMenu.Build(
+            provider: provider,
+            histories: histories,
+            showInTray: _showInTrayMenu.Item,
+            notifications: BuildNotificationsMenu(),
+            checkForUpdates: _updateNotifier.BuildCheckItem(),
+            refreshWithoutWaiting: RefreshWithoutWaiting,
+            historyCleared: OnHistoryCleared,
+            exit: ExitApp);
+        _presenter = new TrayPresenter(menu, _displayVersion, OnTrayClick, OnBalloonTipClicked);
+        _scheduler = new RefreshScheduler(provider, RefreshWithoutWaiting, RefreshAsync);
 
-        _notifyIcon.MouseClick += OnTrayClick;
-        _notifyIcon.BalloonTipClicked += OnBalloonTipClicked;
-
-        _timer = StartPollTimer(_isSimulator ? MockPollIntervalMs : PollIntervalMs);
-        _followUp.Tick += OnFollowUpTick;
         _updateNotifier.ApplySetting();
-        if (provider is HidPpBatteryProvider hid)
-        {
-            hid.ChangeDetected += OnChangeDetected;
-            SystemEvents.PowerModeChanged += OnPowerModeChanged;
-        }
-
-        Application.Idle += OnFirstIdle;
+        _scheduler.Start();
     }
 
     // Raised for every balloon; the notifier decides whether it was the update balloon.
     private void OnBalloonTipClicked(object? sender, EventArgs e) => _updateNotifier.OnBalloonClicked();
 
-    private ContextMenuStrip BuildMenu()
-    {
-        var menu = new ContextMenuStrip();
-        if (_provider is MockBatteryProvider mock)
-        {
-            menu.Items.Add(BuildSimulatorMenu(mock));
-            menu.Items.Add(_showInTrayMenu.Item);
-            menu.Items.Add(BuildNotificationsMenu());
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(_updateNotifier.BuildCheckItem());
-        }
-        else
-        {
-            menu.Items.Add(_showInTrayMenu.Item);
-            menu.Items.Add(BuildNotificationsMenu());
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(_updateNotifier.BuildCheckItem());
-            var startItem = BuildStartupItem();
-
-            void RefreshStartWithWindowsMark(object? sender, CancelEventArgs e) => startItem.Checked = AutoStart.IsEnabled();
-
-            menu.Opening += RefreshStartWithWindowsMark;
-            menu.Items.Add(startItem);
-            if (_histories is not null)
-                menu.Items.Add(BuildClearHistoryItem(_histories));
-        }
-        var exitItem = new ToolStripMenuItem("Exit");
-        exitItem.Click += OnExitClicked;
-        menu.Items.Add(exitItem);
-        MenuStaysOpenForToggles.Attach(menu);
-        return menu;
-    }
-
-    private void OnExitClicked(object? sender, EventArgs e) => ExitApp();
-
     private ToolStripMenuItem BuildNotificationsMenu() =>
         NotificationsMenu.Build(() => _settings.Alerts, ApplyAlertSettings, () => _settings.CheckForUpdates, ToggleCheckForUpdates);
 
-    private ToolStripMenuItem BuildSimulatorMenu(MockBatteryProvider mock)
+    private void OnHistoryCleared()
     {
-        var simulator = new ToolStripMenuItem("Simulator");
-        var modeItems = new List<(ToolStripMenuItem Item, MockMode Mode)>();
-        foreach (var (label, mode) in SimulatorItems)
-        {
-            var item = new ToggleMenuItem(label) { Checked = mock.Mode == mode };
-
-            void OnSimulatorModeClicked(object? sender, EventArgs e)
-            {
-                mock.Mode = mode;
-                foreach (var other in modeItems)
-                    other.Item.Checked = other.Mode == mode;
-                RefreshWithoutWaiting();
-            }
-
-            item.Click += OnSimulatorModeClicked;
-            modeItems.Add((item, mode));
-            simulator.DropDownItems.Add(item);
-        }
-        simulator.DropDownItems.Add(new ToolStripSeparator());
-        simulator.DropDownItems.Add(BuildSeveralDevicesItem(mock));
-        return simulator;
-    }
-
-    private ToolStripMenuItem BuildSeveralDevicesItem(MockBatteryProvider mock)
-    {
-        var item = new ToggleMenuItem("Several devices") { Checked = mock.SeveralDevices };
-
-        void OnSeveralDevicesClicked(object? sender, EventArgs e)
-        {
-            mock.SeveralDevices = !mock.SeveralDevices;
-            item.Checked = mock.SeveralDevices;
-            RefreshWithoutWaiting();
-        }
-
-        item.Click += OnSeveralDevicesClicked;
-        return item;
-    }
-
-    private static ToolStripMenuItem BuildStartupItem()
-    {
-        var startItem = new ToggleMenuItem("Start with Windows");
-
-        void OnStartWithWindowsClicked(object? sender, EventArgs e)
-        {
-            ToggleStartWithWindows();
-            startItem.Checked = AutoStart.IsEnabled();
-        }
-
-        startItem.Click += OnStartWithWindowsClicked;
-        return startItem;
-    }
-
-    private static void ToggleStartWithWindows()
-    {
-        if (AutoStart.IsEnabled())
-        {
-            if (!AutoStart.Disable())
-                ShowWarning("Couldn't turn off Start with Windows. The reason is in log.txt.");
-            return;
-        }
-
-        if (!AutoStart.Enable()) // also rewrites a stale path and clears a Task Manager "disabled"
-            ShowWarning("Couldn't turn on Start with Windows. The reason is in log.txt.");
-    }
-
-    private ToolStripMenuItem BuildClearHistoryItem(DeviceHistories histories)
-    {
-        var clearItem = new ToolStripMenuItem("Clear history…");
-
-        void OnClearHistoryClicked(object? sender, EventArgs e) => ConfirmAndClearHistory(histories);
-
-        clearItem.Click += OnClearHistoryClicked;
-        return clearItem;
-    }
-
-    private void ConfirmAndClearHistory(DeviceHistories histories)
-    {
-        var answer = MessageBox.Show(
-            "Delete all battery history? This cannot be undone.",
-            AppName,
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning,
-            MessageBoxDefaultButton.Button2);
-        if (answer != DialogResult.Yes)
-            return;
-
-        var cleared = histories.ClearAll();
-        if (cleared)
-        {
-            _drainPercentPerDay = null;
-            RefreshTooltip();
-        }
-        else
-            ShowWarning("Couldn't delete the battery history. Close any program that has a history file open and try again.");
+        _drainPercentPerDay = null;
+        RefreshTooltip();
     }
 
     private void ApplyAlertSettings(AlertSettings updated)
@@ -255,9 +93,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (_isSimulator)
             _mockTrayDevice = device;
         else
-        {
             SaveSettings(_settings with { TrayDevice = device }, ShowWarning);
-        }
         ShowTrayDevice(CurrentDevices(), trayHistoryGotLine: false); // the last readings are enough, no new read
     }
 
@@ -288,71 +124,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     internal static void ShowWarning(string message) =>
         MessageBox.Show(message, AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-
-    private Timer StartPollTimer(int intervalMs)
-    {
-        var timer = new Timer { Interval = intervalMs };
-        timer.Tick += OnPollTimerTick;
-        timer.Start();
-        return timer;
-    }
-
-    private void OnPollTimerTick(object? sender, EventArgs e) => RefreshWithoutWaiting();
-
-    // First refresh once the message loop runs, so awaited reads resume on the UI thread.
-    private void OnFirstIdle(object? sender, EventArgs e)
-    {
-        Application.Idle -= OnFirstIdle;
-        _ui ??= SynchronizationContext.Current;
-        RefreshWithoutWaiting();
-    }
-
-    // Background thread: hop to the UI thread and restart the follow-up reads.
-    private void OnChangeDetected() => _ui?.Post(_ =>
-    {
-        if (_exited)
-            return;
-        StartFollowUpTimer(_followUpSchedule.Restart());
-    }, null);
-
-    // Raised on a system thread; it only sets a flag, writes the log and posts to the UI thread, like OnChangeDetected.
-    private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
-    {
-        switch (e.Mode)
-        {
-            case PowerModes.Suspend:
-                AppLog.Info("PC suspending");
-                break;
-            case PowerModes.Resume:
-                AppLog.Info("PC resumed");
-                if (_provider is HidPpBatteryProvider hidProvider) // the simulator has no devices to reopen
-                    hidProvider.ReopenDevices();
-                OnChangeDetected(); // reads again after 1 s, then follows up like after any change
-                break;
-        }
-    }
-
-    private void OnFollowUpTick(object? sender, EventArgs e) =>
-        BackgroundWork.RunWithoutWaiting(FollowUpReadAsync, "Follow-up read failed");
-
-    private async Task FollowUpReadAsync()
-    {
-        _followUp.Stop();
-        var generation = _followUpSchedule.Generation;
-        var (ran, status) = await RefreshAsync();
-        if (_exited)
-            return;
-
-        if (_followUpSchedule.Finish(generation, ran, status) is { } delayMs)
-            StartFollowUpTimer(delayMs);
-    }
-
-    private void StartFollowUpTimer(int delayMs)
-    {
-        _followUp.Stop();
-        _followUp.Interval = delayMs;
-        _followUp.Start();
-    }
 
     private void RefreshWithoutWaiting() =>
         BackgroundWork.RunWithoutWaiting(RefreshAsync, "Battery refresh failed");
@@ -450,7 +221,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _showInTrayMenu.Update(devices.Items);
             ShowInOverlay(devices, historyShown);
             RefreshTooltip();
-            UpdateIcon(devices.Tray.Status);
+            _presenter.ShowIcon(devices.Tray.Status);
         }
         catch (Exception ex)
         {
@@ -465,14 +236,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (historyShown)
             _overlay.ShowHistory(_history);
         _overlay.SetStatus(devices.Tray.Status, devices.TrayName, devices.StatusLine, _drainPercentPerDay);
-    }
-
-    private void UpdateIcon(BatteryStatus? status)
-    {
-        var indicator = TrayIndicator.From(status);
-        var iconSize = TrayIconSize.Current(); // checked each time: the scaling can change while the app runs
-        if (indicator != _indicator || iconSize != _iconSize)
-            ReplaceIcon(indicator, iconSize);
     }
 
     private void NotifyAlerts()
@@ -493,11 +256,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void RefreshTooltip()
     {
-        if (_devices is not { } devices)
+        if (_devices is not { } devices) // no device is known before the first refresh
             return;
 
-        var remainingText = devices.Tray.Status is null ? null : RemainingTime.RemainingText(devices.Tray.Status, _drainPercentPerDay);
-        _notifyIcon.Text = TrayTooltip.Build(devices.TrayName, devices.StatusLine, remainingText, devices.Others, _displayVersion);
+        _presenter.ShowTooltip(devices, _drainPercentPerDay);
     }
 
     private bool OverlayJustClosed() =>
@@ -529,18 +291,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _overlayClosedAtMs = Environment.TickCount64;
     }
 
-    private void ReplaceIcon(TrayIndicator indicator, int iconSize)
-    {
-        var oldIcon = _icon;
-        _icon = TrayIconRenderer.Render(indicator, iconSize);
-        _notifyIcon.Icon = _icon;
-        _indicator = indicator;
-        _iconSize = iconSize;
-        oldIcon?.Dispose();
-    }
-
     private void ShowUpdateBalloon(string title, string text) =>
-        _notifyIcon.ShowBalloonTip(BalloonTimeoutMs, title, text, ToolTipIcon.Info);
+        _presenter.ShowBalloon(title, text, ToolTipIcon.Info);
 
     private void ShowAlert(DeviceAlert deviceAlert)
     {
@@ -548,7 +300,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var icon = deviceAlert.Alert == BatteryAlert.Full ? ToolTipIcon.Info : ToolTipIcon.Warning;
         AppLog.Info("Notification", ("title", title), ("percent", deviceAlert.Percent));
         _updateNotifier.OnOtherBalloonShown();
-        _notifyIcon.ShowBalloonTip(BalloonTimeoutMs, title, text, icon);
+        _presenter.ShowBalloon(title, text, icon);
     }
 
     private void RecomputeDrainRate()
@@ -566,21 +318,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void ExitApp()
     {
         _exited = true;
-        if (_provider is HidPpBatteryProvider hid)
-        {
-            hid.ChangeDetected -= OnChangeDetected;
-            SystemEvents.PowerModeChanged -= OnPowerModeChanged; // static event: it would keep this object alive and run after exit
-        }
         _overlay?.Dispose();
         _overlay = null;
-        _timer.Stop();
-        _timer.Dispose();
-        _followUp.Stop();
-        _followUp.Dispose();
+        _scheduler.Stop();
         _updateNotifier.Dispose();
-        _notifyIcon.Visible = false; // hide first to avoid a ghost icon
-        _notifyIcon.Dispose();
-        _icon?.Dispose();
+        _presenter.Dispose();
         ExitThread();
     }
 }
