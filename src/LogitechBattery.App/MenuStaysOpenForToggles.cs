@@ -11,12 +11,18 @@ internal static class MenuStaysOpenForToggles
 
         void AttachToDropDown(ToolStripDropDown dropDown, ToolStripItemCollection items)
         {
-            dropDown.ItemClicked += (_, e) => lastClickWasToggle = e.ClickedItem is ToggleMenuItem;
+            dropDown.ItemClicked += (_, e) =>
+            {
+                lastClickWasToggle = e.ClickedItem is ToggleMenuItem;
+                AppLog.Info("Menu trace", ("event", "itemClicked"), ("item", e.ClickedItem?.Text), ("toggle", lastClickWasToggle));
+            };
             dropDown.Closing += (_, e) =>
             {
                 if (e.CloseReason == ToolStripDropDownCloseReason.ItemClicked && lastClickWasToggle)
                     e.Cancel = true;
+                AppLog.Info("Menu trace", ("event", "closing"), ("reason", e.CloseReason), ("cancel", e.Cancel));
             };
+            dropDown.Closed += (_, e) => AppLog.Info("Menu trace", ("event", "closed"), ("reason", e.CloseReason));
             // Only items that own a submenu: reading DropDown on a leaf item would create an empty one for nothing.
             foreach (var submenu in items.OfType<ToolStripMenuItem>().Where(item => item.HasDropDown))
                 AttachToDropDown(submenu.DropDown, submenu.DropDownItems);

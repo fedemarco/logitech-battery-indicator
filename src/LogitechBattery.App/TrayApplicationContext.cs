@@ -255,8 +255,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void SaveSettings(AppSettings updated, Action<string> reportProblem)
     {
         _settings = updated; // applies for this session even when the save fails
-        if (_settingsFile.Save(_settings) is { } problem)
-            reportProblem(problem);
+        var saveProblem = _settingsFile.Save(_settings);
+        AppLog.Info("Menu trace", ("event", saveProblem is null ? "saved" : "saveFailed"), ("problem", saveProblem));
+        if (saveProblem is not null)
+            reportProblem(saveProblem);
     }
 
     internal static void ShowWarning(string message) =>
