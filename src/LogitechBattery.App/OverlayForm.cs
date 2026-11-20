@@ -54,6 +54,10 @@ internal sealed class OverlayForm : Form
         public const float StatusFontSize = 15;
         public const float DetailFontSize = 12;
         public const float AxisFontSize = 11;
+
+        public const float StandardDpi = 96f; // the DPI at which the layout sizes above are meant
+        public const int GridLineAlpha = 60; // faint, so the grid stays behind the data
+        public const float GridLineWidth = 1;
     }
 
     private sealed record TimeRangeOption(string Label, TimeSpan Window);
@@ -62,7 +66,7 @@ internal sealed class OverlayForm : Form
     private static readonly Color BorderColor = ColorTranslator.FromHtml("#3A3A3A");
     private static readonly Color PrimaryText = Color.White;
     private static readonly Color SecondaryText = ColorTranslator.FromHtml("#9A9A9A");
-    private static readonly Color GridColor = Color.FromArgb(60, SecondaryText);
+    private static readonly Color GridColor = Color.FromArgb(PanelLayout.GridLineAlpha, SecondaryText);
     private static readonly Color LineColor = ColorTranslator.FromHtml("#4CC2FF");
     private static readonly Color SelectedToggle = ColorTranslator.FromHtml("#3A3A3A");
 
@@ -103,7 +107,7 @@ internal sealed class OverlayForm : Form
         ShowHistory(history);
     }
 
-    private float DpiScale => DeviceDpi / 96f;
+    private float DpiScale => DeviceDpi / PanelLayout.StandardDpi;
 
     public void SetStatus(BatteryStatus? status, string deviceName, string statusLine, double? drainPercentPerDay)
     {
@@ -204,8 +208,8 @@ internal sealed class OverlayForm : Form
     private RectangleF BoxAt(PointF origin, float offsetX, float offsetY, float width, float height) =>
         new(origin.X + offsetX * DpiScale, origin.Y + offsetY * DpiScale, width * DpiScale, height * DpiScale);
 
-    private RectangleF Scaled(float x, float y, float width, float height) =>
-        new(x * DpiScale, y * DpiScale, width * DpiScale, height * DpiScale);
+    private RectangleF Scaled(float left, float top, float width, float height) =>
+        new(left * DpiScale, top * DpiScale, width * DpiScale, height * DpiScale);
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -309,7 +313,7 @@ internal sealed class OverlayForm : Form
 
     private void DrawAxes(Graphics graphics, RectangleF plot, Font font, DateTimeOffset now)
     {
-        using var gridPen = new Pen(GridColor, 1);
+        using var gridPen = new Pen(GridColor, PanelLayout.GridLineWidth);
         DrawPercentGrid(graphics, plot, font, gridPen);
         DrawTimeTicks(graphics, plot, font, gridPen, now);
     }
@@ -318,11 +322,11 @@ internal sealed class OverlayForm : Form
     {
         foreach (var percent in PercentGridLines)
         {
-            var y = PercentToY(percent, plot);
-            graphics.DrawLine(gridPen, plot.Left, y, plot.Right, y);
+            var gridLineY = PercentToY(percent, plot);
+            graphics.DrawLine(gridPen, plot.Left, gridLineY, plot.Right, gridLineY);
 
             var label = BoxAt(
-                new PointF(plot.Left, y),
+                new PointF(plot.Left, gridLineY),
                 offsetX: -(PanelLayout.PercentLabelWidth + PanelLayout.PercentLabelGap),
                 offsetY: -PanelLayout.PercentLabelHeight / 2f,
                 PanelLayout.PercentLabelWidth,
@@ -338,11 +342,11 @@ internal sealed class OverlayForm : Form
             : HistoryChart.DayTicks(now, TimeZoneInfo.Local);
         foreach (var tick in ticks)
         {
-            var x = TimeToX(tick.Time, plot, now);
-            graphics.DrawLine(gridPen, x, plot.Bottom, x, plot.Bottom + PanelLayout.TickLength * DpiScale);
+            var tickX = TimeToX(tick.Time, plot, now);
+            graphics.DrawLine(gridPen, tickX, plot.Bottom, tickX, plot.Bottom + PanelLayout.TickLength * DpiScale);
 
             var label = BoxAt(
-                new PointF(x, plot.Bottom),
+                new PointF(tickX, plot.Bottom),
                 offsetX: -PanelLayout.TickLabelWidth / 2f,
                 offsetY: PanelLayout.TickLabelTop,
                 PanelLayout.TickLabelWidth,

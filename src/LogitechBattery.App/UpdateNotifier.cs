@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using LogitechBattery.Updates;
+using Timer = System.Windows.Forms.Timer;
 
 namespace LogitechBattery;
 
@@ -20,7 +21,7 @@ internal sealed class UpdateNotifier : IDisposable
     private readonly bool _isSimulator;
     private readonly Action<string, string> _showBalloon;
     private readonly UpdateCheck _updateCheck = new();
-    private System.Windows.Forms.Timer? _timer; // exists only while the setting is on
+    private Timer? _timer; // exists only while the setting is on
     private Version? _announcedVersion; // one balloon per version per session
     private string? _pageOfBalloon; // set while the balloon on screen is the update balloon
     private bool _disposed;
@@ -42,7 +43,7 @@ internal sealed class UpdateNotifier : IDisposable
         if (!_isEnabled() || _isSimulator)
             return;
 
-        _timer = new System.Windows.Forms.Timer { Interval = FirstCheckDelayMs };
+        _timer = new Timer { Interval = FirstCheckDelayMs };
         _timer.Tick += OnTimerTick;
         _timer.Start();
     }
@@ -175,7 +176,8 @@ internal sealed class UpdateNotifier : IDisposable
     {
         try
         {
-            Process.Start(new ProcessStartInfo(pageUrl) { UseShellExecute = true })?.Dispose();
+            // Start returns null when the shell reused an already running process; there is nothing to dispose then.
+            using var started = Process.Start(new ProcessStartInfo(pageUrl) { UseShellExecute = true });
         }
         catch (Exception ex)
         {

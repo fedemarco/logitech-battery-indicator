@@ -12,4 +12,7 @@ public sealed record DeviceInfo(DeviceId Id, string Name)
     /// logged connection state. It is not a real device and must never get a history file.
     /// </summary>
     public static DeviceInfo NoDeviceYet { get; } = new(DeviceId.FromRoute(productId: 0, deviceIndex: 0), UnnamedDeviceName);
+
+    /// <summary>True for <see cref="NoDeviceYet"/>, which stands in for a device that was not found yet.</summary>
+    public bool IsPlaceholder => Id == NoDeviceYet.Id;
 }

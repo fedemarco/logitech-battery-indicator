@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Reflection;
 using Microsoft.Win32;
 using LogitechBattery.Battery;
+using Timer = System.Windows.Forms.Timer;
 
 namespace LogitechBattery;
 
@@ -40,15 +41,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly StuckReadWatch _stuckReadWatch = new(StuckReadAfter);
 
     private readonly NotifyIcon _notifyIcon;
-    private readonly System.Windows.Forms.Timer _timer;
-    private readonly System.Windows.Forms.Timer _followUp = new();
+    private readonly Timer _timer;
+    private readonly Timer _followUp = new();
     private readonly UpdateNotifier _updateNotifier;
     private volatile SynchronizationContext? _ui;
 
     private Icon? _icon;
     private int _iconSize;
     private TrayIndicator? _indicator;
-    private ShowInTrayMenu? _showInTrayMenu;
+    private readonly ShowInTrayMenu _showInTrayMenu;
     private OverlayForm? _overlay;
     private long? _overlayClosedAtMs;
     private IReadOnlyList<DeviceReading> _readings = [];
@@ -73,10 +74,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (!_isSimulator)
             AutoStart.EnableOnFirstRun();
 
+        _showInTrayMenu = new ShowInTrayMenu(ChooseTrayDevice);
         _notifyIcon = new NotifyIcon
         {
             Icon = SystemIcons.Application, // replaced by the first refresh
-            Text = TrayTooltip.Build(DeviceInfo.NoDeviceYet.Name, null, null, [], _displayVersion),
+            Text = TrayTooltip.Build(
+                DeviceInfo.NoDeviceYet.Name, statusLine: null, remainingText: null, otherDevices: [], _displayVersion),
             ContextMenuStrip = BuildMenu(),
             Visible = true,
         };
@@ -102,7 +105,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private ContextMenuStrip BuildMenu()
     {
         var menu = new ContextMenuStrip();
-        _showInTrayMenu = new ShowInTrayMenu(ChooseTrayDevice);
         if (_provider is MockBatteryProvider mock)
         {
             menu.Items.Add(BuildSimulatorMenu(mock));
@@ -126,7 +128,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
             if (_histories is not null)
                 menu.Items.Add(BuildClearHistoryItem(_histories));
         }
-        menu.Items.Add("Exit", null, OnExitClicked);
+        var exitItem = new ToolStripMenuItem("Exit");
+        exitItem.Click += OnExitClicked;
+        menu.Items.Add(exitItem);
         MenuStaysOpenForToggles.Attach(menu);
         return menu;
     }
@@ -139,21 +143,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private ToolStripMenuItem BuildSimulatorMenu(MockBatteryProvider mock)
     {
         var simulator = new ToolStripMenuItem("Simulator");
-        var modeItems = new List<ToolStripMenuItem>();
+        var modeItems = new List<(ToolStripMenuItem Item, MockMode Mode)>();
         foreach (var (label, mode) in SimulatorItems)
         {
-            var item = new ToggleMenuItem(label) { Checked = mock.Mode == mode, Tag = mode };
+            var item = new ToggleMenuItem(label) { Checked = mock.Mode == mode };
 
             void OnSimulatorModeClicked(object? sender, EventArgs e)
             {
                 mock.Mode = mode;
                 foreach (var other in modeItems)
-                    other.Checked = (MockMode)other.Tag! == mode;
+                    other.Item.Checked = other.Mode == mode;
                 RefreshWithoutWaiting();
             }
 
             item.Click += OnSimulatorModeClicked;
-            modeItems.Add(item);
+            modeItems.Add((item, mode));
             simulator.DropDownItems.Add(item);
         }
         simulator.DropDownItems.Add(new ToolStripSeparator());
@@ -285,9 +289,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
     internal static void ShowWarning(string message) =>
         MessageBox.Show(message, AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
-    private System.Windows.Forms.Timer StartPollTimer(int intervalMs)
+    private Timer StartPollTimer(int intervalMs)
     {
-        var timer = new System.Windows.Forms.Timer { Interval = intervalMs };
+        var timer = new Timer { Interval = intervalMs };
         timer.Tick += OnPollTimerTick;
         timer.Start();
         return timer;
@@ -321,7 +325,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 break;
             case PowerModes.Resume:
                 AppLog.Info("PC resumed");
-                (_provider as HidPpBatteryProvider)?.ReopenDevices();
+                if (_provider is HidPpBatteryProvider hidProvider) // the simulator has no devices to reopen
+                    hidProvider.ReopenDevices();
                 OnChangeDetected(); // reads again after 1 s, then follows up like after any change
                 break;
         }
@@ -406,7 +411,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var trayHistoryGotLine = false;
         foreach (var (device, status) in _readings)
         {
-            if (status is null || device.Id == DeviceInfo.NoDeviceYet.Id)
+            if (status is null || device.IsPlaceholder)
                 continue;
             var wrote = _histories.For(device, now).Record(status);
             var isTrayDevice = device.Id == trayDevice.Id;
@@ -419,7 +424,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     // The tray device's history is null in the simulator and while no device is known.
     private BatteryHistory? HistoryOf(DeviceInfo trayDevice)
     {
-        if (_histories is null || trayDevice.Id == DeviceInfo.NoDeviceYet.Id)
+        if (_histories is null || trayDevice.IsPlaceholder)
             return null;
         return _histories.For(trayDevice, DateTimeOffset.UtcNow);
     }
@@ -442,7 +447,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             var historyShown = SwitchHistoryTo(devices.Tray.Device) || trayHistoryGotLine;
             if (historyShown)
                 RecomputeDrainRate();
-            _showInTrayMenu?.Update(devices.Items);
+            _showInTrayMenu.Update(devices.Items);
             ShowInOverlay(devices, historyShown);
             RefreshTooltip();
             UpdateIcon(devices.Tray.Status);

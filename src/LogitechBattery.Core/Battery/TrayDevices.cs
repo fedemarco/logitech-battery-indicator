@@ -41,10 +41,10 @@ public sealed record TrayDevices(
     private static List<DeviceReading> ListedDevices(IReadOnlyList<DeviceReading> readings, DeviceReading tray)
     {
         var listed = readings
-            .Where(reading => reading.Device.Id != DeviceInfo.NoDeviceYet.Id)
+            .Where(reading => !reading.Device.IsPlaceholder)
             .Where(reading => AnswersNow(reading.Status) || reading.Device.Id == tray.Device.Id)
             .ToList();
-        var trayIsMissing = tray.Device.Id != DeviceInfo.NoDeviceYet.Id && listed.All(reading => reading.Device.Id != tray.Device.Id);
+        var trayIsMissing = !tray.Device.IsPlaceholder && listed.All(reading => reading.Device.Id != tray.Device.Id);
         if (trayIsMissing)
             listed.Add(tray);
         return listed;

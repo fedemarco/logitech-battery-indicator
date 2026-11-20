@@ -30,13 +30,13 @@ public static class TrayDeviceChoice
         if (saved is not null)
             return null;
 
-        return readings.FirstOrDefault(reading => reading.Device.Id != DeviceInfo.NoDeviceYet.Id)?.Device.Id;
+        return readings.FirstOrDefault(reading => !reading.Device.IsPlaceholder)?.Device.Id;
     }
 
     // The placeholder carries the receiver state (Asleep when a receiver is open) while no device answered yet, for example
     // when the mouse sleeps at app start. Once any device is known, a saved device that was not read is not found.
     private static ConnectionState StateWhileNoDeviceIsKnown(IReadOnlyList<DeviceReading> readings) =>
-        readings.FirstOrDefault(reading => reading.Device.Id == DeviceInfo.NoDeviceYet.Id)?.Status?.Connection ?? ConnectionState.NotFound;
+        readings.FirstOrDefault(reading => reading.Device.IsPlaceholder)?.Status?.Connection ?? ConnectionState.NotFound;
 
     private static DeviceReading NotRead(DeviceId id, IReadOnlyDictionary<DeviceId, string> savedNames, ConnectionState state, DateTimeOffset now)
     {

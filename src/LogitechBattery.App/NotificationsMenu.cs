@@ -10,8 +10,9 @@ internal static class NotificationsMenu
         var lowItem = new ToolStripMenuItem();
         var fullItem = new ToggleMenuItem("Fully charged");
         var updatesItem = new ToggleMenuItem("New app versions");
+        var lowChoices = new List<(ToggleMenuItem Item, int Percent)>();
 
-        void RefreshMarks() => ShowCurrent(current(), lowItem, fullItem, checkForUpdates(), updatesItem);
+        void RefreshMarks() => ShowCurrent(current(), lowItem, lowChoices, fullItem, checkForUpdates(), updatesItem);
         void ApplyAndRefresh(AlertSettings updated)
         {
             apply(updated);
@@ -37,8 +38,9 @@ internal static class NotificationsMenu
         {
             void ChooseLowPercent(object? sender, EventArgs e) => ApplyAndRefresh(current() with { LowPercent = percent });
 
-            var choice = new ToggleMenuItem($"{percent}%") { Tag = percent };
+            var choice = new ToggleMenuItem($"{percent}%");
             choice.Click += ChooseLowPercent;
+            lowChoices.Add((choice, percent));
             lowItem.DropDownItems.Add(choice);
         }
         fullItem.Click += ToggleFullChargeAlert;
@@ -55,11 +57,16 @@ internal static class NotificationsMenu
     }
 
     private static void ShowCurrent(
-        AlertSettings settings, ToolStripMenuItem lowItem, ToolStripMenuItem fullItem, bool checkForUpdates, ToolStripMenuItem updatesItem)
+        AlertSettings settings,
+        ToolStripMenuItem lowItem,
+        IReadOnlyList<(ToggleMenuItem Item, int Percent)> lowChoices,
+        ToolStripMenuItem fullItem,
+        bool checkForUpdates,
+        ToolStripMenuItem updatesItem)
     {
         lowItem.Text = $"Low battery: {settings.LowPercent}%"; // a screen reader reads the value before the list opens
-        foreach (ToolStripMenuItem choice in lowItem.DropDownItems)
-            choice.Checked = (int)choice.Tag! == settings.LowPercent;
+        foreach (var choice in lowChoices)
+            choice.Item.Checked = choice.Percent == settings.LowPercent;
         fullItem.Checked = settings.FullChargeAlert;
         updatesItem.Checked = checkForUpdates;
     }

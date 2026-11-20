@@ -14,7 +14,7 @@ public sealed class DeviceTracker(IReadOnlyDictionary<DeviceId, string> savedNam
 
     public DeviceTrackerUpdate Update(IReadOnlyList<DeviceReading> readings, AlertSettings settings)
     {
-        var realReadings = readings.Where(reading => reading.Device.Id != DeviceInfo.NoDeviceYet.Id).ToList();
+        var realReadings = readings.Where(reading => !reading.Device.IsPlaceholder).ToList();
         var displayNames = DeviceNames.Display(realReadings.Select(reading => reading.Device).ToList());
 
         var alerts = new List<DeviceAlert>();
