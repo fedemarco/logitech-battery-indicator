@@ -15,6 +15,9 @@ internal readonly record struct HidPpAnswer(byte[]? Response, byte? ErrorCode)
 /// </summary>
 internal sealed class HidPpChannel : IHidPpChannel, IDisposable
 {
+    /// <summary>How long a request may wait for its answer in normal reading and in the probe.</summary>
+    public static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(1);
+
     private const int StreamWriteTimeoutMs = 200;
     private const byte FirstRotatingSoftwareId = 0x1; // 0x0 is for device events
     private const byte LastRotatingSoftwareId = 0xE;  // 0xF is used by other Logitech software
@@ -101,8 +104,15 @@ internal sealed class HidPpChannel : IHidPpChannel, IDisposable
     public void Dispose()
     {
         _closed = true;
-        foreach (var stream in new[] { _longStream, _shortStream })
-            try { stream?.Dispose(); } catch { }
+        DisposeQuietly(_longStream);
+        DisposeQuietly(_shortStream);
+    }
+
+    // A stream of an unplugged device may throw on disposal; there is nothing to do about it.
+    private static void DisposeQuietly(HidStream? stream)
+    {
+        try { stream?.Dispose(); }
+        catch { }
     }
 
     private HidStream StreamFor(byte[] request) =>

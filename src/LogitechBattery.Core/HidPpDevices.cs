@@ -88,6 +88,6 @@ internal static class HidPpDevices
     private static T? OrDefault<T>(Func<T> read)
     {
         try { return read(); }
-        catch { return default; }
+        catch { return default; } // an unreadable collection must not hide the device
     }
 }

@@ -15,7 +15,6 @@ public sealed class HidPpProbe
     private const string ReportFileName = "probe.txt";
     private const ushort BatteryStatusFeatureId = 0x1000;
     private const ushort BatteryVoltageFeatureId = 0x1001;
-    private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(1);
 
     /// <summary>A device index on an open channel.</summary>
     private readonly record struct DeviceLink(HidPpChannel Channel, byte DeviceIndex);
@@ -70,11 +69,17 @@ public sealed class HidPpProbe
     private HidCollection DescribeCollection(HidDevice device)
     {
         var collection = HidPpDevices.Describe(device);
-        var maxInputLength = 0;
-        try { maxInputLength = device.GetMaxInputReportLength(); } catch { }
+        var maxInputLength = MaxInputLengthOrZero(device);
         Log($"PID {device.ProductID:X4}  \"{ProductNameOrError(device)}\"  usage(page:usage) {UsagesOrError(device)}  maxIn {maxInputLength}  maxOut {collection.OutputReportLength}");
         Log($"    {device.DevicePath}");
         return collection;
+    }
+
+    // A collection that cannot be queried is reported as 0; the probe only describes what it finds.
+    private static int MaxInputLengthOrZero(HidDevice device)
+    {
+        try { return device.GetMaxInputReportLength(); }
+        catch { return 0; }
     }
 
     private static string ProductNameOrError(HidDevice device)
@@ -188,7 +193,7 @@ public sealed class HidPpProbe
     private byte[]? Request(DeviceLink link, byte[] request)
     {
         Log($"  → {HidPpMessage.ToHex(request)}");
-        var answer = link.Channel.Exchange(request, ResponseTimeout, CancellationToken.None);
+        var answer = link.Channel.Exchange(request, HidPpChannel.ResponseTimeout, CancellationToken.None);
         if (answer.Response is null)
             Log(answer.ErrorCode is { } errorCode ? $"  HID++ 2.0 error 0x{errorCode:X2}" : "  no answer (timeout or HID++ 1.0 error)");
         return answer.Response;

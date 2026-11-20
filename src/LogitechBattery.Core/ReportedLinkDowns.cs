@@ -10,10 +10,10 @@ internal sealed class ReportedLinkDowns
     public void Record(Slot slot) => _slots[slot] = 0;
 
     /// <summary>True once per recorded link down.</summary>
-    public bool Take(Slot slot) => _slots.TryRemove(slot, out _);
+    public bool Take(Slot slot) => _slots.TryRemove(slot, out byte unusedMarker);
 
     /// <summary>The device is linked again (or its channel is gone): an older link down no longer counts.</summary>
-    public void Forget(Slot slot) => _slots.TryRemove(slot, out _);
+    public void Forget(Slot slot) => Take(slot);
 
     public void Clear() => _slots.Clear();
 }

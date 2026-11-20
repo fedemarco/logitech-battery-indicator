@@ -10,8 +10,6 @@ namespace LogitechBattery;
 /// </summary>
 public sealed class HidPpBatteryProvider : IBatteryProvider
 {
-    private static readonly TimeSpan ResponseTimeout = TimeSpan.FromSeconds(1);
-
     internal enum RouteOutcome { Answered, NoAnswer, Failed, ChannelLost }
 
     /// <summary>What reading one route gave; <see cref="Status"/> is set only for <see cref="RouteOutcome.Answered"/>.</summary>
@@ -156,36 +154,47 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         var channelLost = false;
         foreach (var route in _routes.All)
         {
-            // A closed channel (unplugged, or lost for an earlier device of the same receiver in this pass) is lost once;
-            // reading its other devices would only log the loss again. The second read pass reads them anew.
-            if (route.Channel.IsClosed)
-            {
-                if (_channels.Any(channel => channel == route.Channel))
-                    Lost(route.Channel);
+            var lostThisRoute = route.Channel.IsClosed
+                ? LoseClosedChannel(route)
+                : ReadRoute(route, now, statuses, cancellationToken);
+            if (lostThisRoute)
                 channelLost = true;
-                continue;
-            }
-            var read = ReadStatus(route, now, cancellationToken);
-            // Taken after the read, for every outcome: a link down that arrived during the read must count, and an answer clears it.
-            var linkWentDown = _linkDowns.Take(route.Slot);
-            switch (read)
-            {
-                case { Outcome: RouteOutcome.Answered, Status: { } status }:
-                    KeepAnswer(route, status, statuses);
-                    break;
-                case { Outcome: RouteOutcome.NoAnswer }:
-                    KeepOrDropMissedRoute(route, linkWentDown, statuses);
-                    break;
-                case { Outcome: RouteOutcome.Failed }:
-                    ReportFailure(route, statuses);
-                    break;
-                case { Outcome: RouteOutcome.ChannelLost }:
-                    Lost(route.Channel);
-                    channelLost = true;
-                    break;
-            }
         }
         return channelLost;
+    }
+
+    // A closed channel (unplugged, or lost for an earlier device of the same receiver in this pass) is lost once;
+    // reading its other devices would only log the loss again. The second read pass reads them anew.
+    private bool LoseClosedChannel(BatteryTarget route)
+    {
+        if (_channels.Any(channel => channel == route.Channel))
+            Lost(route.Channel);
+        return true;
+    }
+
+    /// <summary>Reads one route and keeps its outcome; true if its channel was lost.</summary>
+    private bool ReadRoute(BatteryTarget route, DateTimeOffset now, Dictionary<DeviceId, BatteryStatus?> statuses, CancellationToken cancellationToken)
+    {
+        var read = ReadStatus(route, now, cancellationToken);
+        // Taken after the read, for every outcome: a link down that arrived during the read must count, and an answer clears it.
+        var linkWentDown = _linkDowns.Take(route.Slot);
+        switch (read)
+        {
+            case { Outcome: RouteOutcome.Answered, Status: { } status }:
+                KeepAnswer(route, status, statuses);
+                return false;
+            case { Outcome: RouteOutcome.NoAnswer }:
+                KeepOrDropMissedRoute(route, linkWentDown, statuses);
+                return false;
+            case { Outcome: RouteOutcome.Failed }:
+                ReportFailure(route, statuses);
+                return false;
+            case { Outcome: RouteOutcome.ChannelLost }:
+                Lost(route.Channel);
+                return true;
+            default:
+                return false;
+        }
     }
 
     private void KeepAnswer(BatteryTarget route, BatteryStatus status, Dictionary<DeviceId, BatteryStatus?> statuses)
@@ -216,7 +225,7 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         try
         {
             var request = HidPpMessage.BuildRequest(route.DeviceIndex, route.FeatureIndex, UnifiedBattery.GetStatusFunction, HidPpMessage.SoftwareId);
-            var answer = route.Channel.Exchange(request, ResponseTimeout, cancellationToken);
+            var answer = route.Channel.Exchange(request, HidPpChannel.ResponseTimeout, cancellationToken);
             return ReadAnswer(route, answer, now);
         }
         catch (Exception ex) when (ex is IOException or TimeoutException)
@@ -348,17 +357,20 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         _devicesFailedToOpen.IntersectWith(devices.Select(device => device.Key)); // an unplugged device is logged again if it fails after a replug
 
         foreach (var device in devices.Where(device => _channels.All(channel => channel.Key != device.Key)))
+            OpenChannel(device, cancellationToken);
+    }
+
+    private void OpenChannel(HidPpDevice device, CancellationToken cancellationToken)
+    {
+        if (HidPpChannel.Open(device, OnReport) is not { } channel)
         {
-            if (HidPpChannel.Open(device, OnReport) is not { } channel)
-            {
-                RetryOpenOnNextRead(device);
-                continue;
-            }
-            _devicesFailedToOpen.Remove(device.Key);
-            _channels.Add(channel);
-            if (channel.HasShortCollection)
-                EnableReceiverNotifications(channel, cancellationToken);
+            RetryOpenOnNextRead(device);
+            return;
         }
+        _devicesFailedToOpen.Remove(device.Key);
+        _channels.Add(channel);
+        if (channel.HasShortCollection)
+            EnableReceiverNotifications(channel, cancellationToken);
     }
 
     // A device that cannot be opened (during a resume or enumeration, or held exclusively by another program) is tried again

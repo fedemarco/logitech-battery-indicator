@@ -172,27 +172,32 @@ public sealed class SettingsFile(string path)
         foreach (var rawLine in lines)
         {
             lineNumber++;
-            var line = rawLine.Trim();
-            if (line.Length == 0 || line.StartsWith('#'))
-                continue;
-
-            var equalsAt = line.IndexOf('=');
-            if (equalsAt < 0)
-            {
-                problems.Add($"line {lineNumber} has no '=': {Quote(line)}");
-                continue;
-            }
-
-            var key = line[..equalsAt].Trim();
-            var value = line[(equalsAt + 1)..].Trim();
-            if (TryParseDeviceNameKey(key, out var id))
-                SetName(deviceNames, id, value);
-            else if (KnownKeys.Contains(key))
-                values[key] = value;
-            else
-                problems.Add($"unknown key '{Quote(key)}'");
+            ReadLine(rawLine.Trim(), lineNumber, values, deviceNames, problems);
         }
         return values;
+    }
+
+    private static void ReadLine(
+        string line, int lineNumber, Dictionary<string, string> values, Dictionary<DeviceId, string> deviceNames, List<string> problems)
+    {
+        if (line.Length == 0 || line.StartsWith('#'))
+            return;
+
+        var equalsAt = line.IndexOf('=');
+        if (equalsAt < 0)
+        {
+            problems.Add($"line {lineNumber} has no '=': {Quote(line)}");
+            return;
+        }
+
+        var key = line[..equalsAt].Trim();
+        var value = line[(equalsAt + 1)..].Trim();
+        if (TryParseDeviceNameKey(key, out var id))
+            SetName(deviceNames, id, value);
+        else if (KnownKeys.Contains(key))
+            values[key] = value;
+        else
+            problems.Add($"unknown key '{Quote(key)}'");
     }
 
     private static void SetName(Dictionary<DeviceId, string> deviceNames, DeviceId id, string value)

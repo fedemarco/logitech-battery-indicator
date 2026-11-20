@@ -37,8 +37,8 @@ public sealed class DeviceTracker(IReadOnlyDictionary<DeviceId, string> savedNam
     private IReadOnlyDictionary<DeviceId, string>? RememberNames(List<DeviceReading> realReadings)
     {
         var changed = false;
-        foreach (var (device, _) in realReadings)
-            changed |= RememberName(device);
+        foreach (var reading in realReadings)
+            changed |= RememberName(reading.Device);
         return changed ? new Dictionary<DeviceId, string>(_knownNames) : null;
     }
 
