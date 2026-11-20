@@ -8,18 +8,28 @@ internal static class NotificationsMenu
     public static ToolStripMenuItem Build(Func<AlertSettings> current, Action<AlertSettings> apply, Func<bool> checkForUpdates, Action toggleCheckForUpdates)
     {
         var lowItem = new ToolStripMenuItem();
-        foreach (var percent in AlertSettings.LowChoices)
+        var fullItem = new ToggleMenuItem("Fully charged");
+        var updatesItem = new ToggleMenuItem("New app versions");
+
+        void RefreshMarks() => ShowCurrent(current(), lowItem, fullItem, checkForUpdates(), updatesItem);
+        void ApplyAndRefresh(AlertSettings updated)
         {
-            var choice = new ToolStripMenuItem($"{percent}%") { Tag = percent };
-            choice.Click += (_, _) => apply(current() with { LowPercent = percent });
-            lowItem.DropDownItems.Add(choice);
+            apply(updated);
+            RefreshMarks();
         }
 
-        var fullItem = new ToolStripMenuItem("Fully charged");
-        fullItem.Click += (_, _) => apply(current() with { FullChargeAlert = !current().FullChargeAlert });
-
-        var updatesItem = new ToolStripMenuItem("New app versions");
-        updatesItem.Click += (_, _) => toggleCheckForUpdates();
+        foreach (var percent in AlertSettings.LowChoices)
+        {
+            var choice = new ToggleMenuItem($"{percent}%") { Tag = percent };
+            choice.Click += (_, _) => ApplyAndRefresh(current() with { LowPercent = percent });
+            lowItem.DropDownItems.Add(choice);
+        }
+        fullItem.Click += (_, _) => ApplyAndRefresh(current() with { FullChargeAlert = !current().FullChargeAlert });
+        updatesItem.Click += (_, _) =>
+        {
+            toggleCheckForUpdates();
+            RefreshMarks();
+        };
 
         // A quick click right after passing over "Low battery" was lost while its submenu was still open (seen on Windows),
         // so the submenu closes as soon as the pointer reaches one of the switches.
@@ -30,7 +40,7 @@ internal static class NotificationsMenu
         menu.DropDownItems.Add(lowItem);
         menu.DropDownItems.Add(fullItem);
         menu.DropDownItems.Add(updatesItem);
-        menu.DropDownOpening += (_, _) => ShowCurrent(current(), lowItem, fullItem, checkForUpdates(), updatesItem);
+        menu.DropDownOpening += (_, _) => RefreshMarks();
         return menu;
     }
 

@@ -120,6 +120,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 menu.Items.Add(BuildClearHistoryItem(_histories));
         }
         menu.Items.Add("Exit", null, (_, _) => ExitApp());
+        MenuStaysOpenForToggles.Attach(menu);
         return menu;
     }
 
@@ -132,7 +133,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var modeItems = new List<ToolStripMenuItem>();
         foreach (var (label, mode) in SimulatorItems)
         {
-            var item = new ToolStripMenuItem(label) { Checked = mock.Mode == mode, Tag = mode };
+            var item = new ToggleMenuItem(label) { Checked = mock.Mode == mode, Tag = mode };
             item.Click += (_, _) =>
             {
                 mock.Mode = mode;
@@ -150,7 +151,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private ToolStripMenuItem BuildSeveralDevicesItem(MockBatteryProvider mock)
     {
-        var item = new ToolStripMenuItem("Several devices") { Checked = mock.SeveralDevices };
+        var item = new ToggleMenuItem("Several devices") { Checked = mock.SeveralDevices };
         item.Click += (_, _) =>
         {
             mock.SeveralDevices = !mock.SeveralDevices;
@@ -162,8 +163,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private static ToolStripMenuItem BuildStartupItem()
     {
-        var startItem = new ToolStripMenuItem("Start with Windows");
-        startItem.Click += (_, _) => ToggleStartWithWindows();
+        var startItem = new ToggleMenuItem("Start with Windows");
+        startItem.Click += (_, _) =>
+        {
+            ToggleStartWithWindows();
+            startItem.Checked = AutoStart.IsEnabled();
+        };
         return startItem;
     }
 
