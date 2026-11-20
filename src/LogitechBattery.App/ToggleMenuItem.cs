@@ -6,10 +6,4 @@ internal sealed class ToggleMenuItem : ToolStripMenuItem
     public ToggleMenuItem(string text) : base(text)
     {
     }
-
-    protected override void OnClick(EventArgs e)
-    {
-        AppLog.Info("Menu trace", ("event", "click"), ("item", Text));
-        base.OnClick(e);
-    }
 }
