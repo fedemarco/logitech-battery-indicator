@@ -13,6 +13,11 @@ internal sealed class StubHttpMessageHandler : HttpMessageHandler
     {
     }
 
+    public StubHttpMessageHandler(HttpContent content) :
+        this(() => new HttpResponseMessage(HttpStatusCode.OK) { Content = content })
+    {
+    }
+
     public StubHttpMessageHandler(Exception failure) : this(() => throw failure)
     {
     }

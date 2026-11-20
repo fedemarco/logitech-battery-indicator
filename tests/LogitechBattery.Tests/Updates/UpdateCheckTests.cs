@@ -91,6 +91,14 @@ public class UpdateCheckTests
     }
 
     [Fact]
+    public async Task Check_returns_Failed_when_the_connection_drops_while_the_body_is_read()
+    {
+        var result = await CheckAsync(new StubHttpMessageHandler(new DroppedConnectionContent()));
+
+        Assert.StartsWith("network error", ReasonOf(result));
+    }
+
+    [Fact]
     public async Task A_timeout_fails()
     {
         var result = await CheckAsync(new StubHttpMessageHandler(new TaskCanceledException("The request timed out")));
@@ -157,5 +165,38 @@ public class UpdateCheckTests
         var second = await check.CheckAsync(OlderVersion, CancellationToken.None);
 
         Assert.IsType<UpdateCheckResult.Available>(second);
+    }
+
+    private sealed class DroppedConnectionContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) => Task.CompletedTask;
+
+        protected override Task<Stream> CreateContentReadStreamAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<Stream>(new DroppedConnectionStream());
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+    }
+
+    private sealed class DroppedConnectionStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new IOException("The connection was closed");
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            throw new IOException("The connection was closed");
+
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

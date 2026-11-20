@@ -41,7 +41,7 @@ public sealed class UpdateCheck
         {
             return new UpdateCheckResult.Failed("GitHub did not answer in time");
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
         {
             return new UpdateCheckResult.Failed($"network error: {ex.Message}");
         }
