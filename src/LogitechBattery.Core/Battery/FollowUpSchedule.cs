@@ -3,7 +3,7 @@ namespace LogitechBattery.Battery;
 /// <summary>
 /// When to read again after a change (USB, mouse link, battery event): the cable shows up at once, but the
 /// mouse can take a while to reconnect wirelessly. 1 s, then every 5 s for a minute, every 10 s, 15 s and 30 s
-/// for a minute each; then the regular 60 s poll takes over. Stops as soon as the mouse is connected.
+/// for a minute each; then the regular 60 s poll takes over. Stops as soon as every expected device is connected.
 /// The caller owns the timer and asks this class for the next delay.
 /// </summary>
 public sealed class FollowUpSchedule
@@ -34,13 +34,14 @@ public sealed class FollowUpSchedule
     /// Handles the end of a follow-up read that began at <paramref name="generation"/>.
     /// Returns the delay before the next read, or null if no further read is to be scheduled.
     /// A read that was skipped (<paramref name="ran"/> false) is tried again at the same step.
+    /// <paramref name="allExpectedDevicesConnected"/> comes from <see cref="ExpectedDevices.AllConnected"/>.
     /// </summary>
-    public int? Finish(int generation, bool ran, BatteryStatus? status)
+    public int? Finish(int generation, bool ran, bool allExpectedDevicesConnected)
     {
         if (generation != Generation)
             return null; // a restart during the read already scheduled the next one
 
-        if (status?.Connection == ConnectionState.Connected)
+        if (allExpectedDevicesConnected)
             return null;
 
         if (ran)

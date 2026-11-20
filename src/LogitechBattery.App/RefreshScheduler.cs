@@ -4,7 +4,7 @@ using Timer = System.Windows.Forms.Timer;
 
 namespace LogitechBattery;
 
-/// <summary>Decides when the battery is read: a poll timer, follow-up reads after a change, the first idle and a PC resume.</summary>
+/// <summary>Decides when the battery is read: a poll timer, follow-up reads after a change, the first idle (with follow-up reads) and a PC resume.</summary>
 internal sealed class RefreshScheduler
 {
     private const int MockPollIntervalMs = 1000;
@@ -13,7 +13,7 @@ internal sealed class RefreshScheduler
     private readonly IBatteryProvider _provider;
     // The poll tick starts a read and does not wait; the follow-up needs the read's result to plan the next read.
     private readonly Action _refreshWithoutWaiting;
-    private readonly Func<Task<(bool Ran, BatteryStatus? Status)>> _refreshAsync;
+    private readonly Func<Task<(bool Ran, bool AllExpectedDevicesConnected)>> _refreshAsync;
     private readonly FollowUpSchedule _followUpSchedule = new();
     private readonly Timer _pollTimer = new();
     private readonly Timer _followUpTimer = new();
@@ -23,7 +23,7 @@ internal sealed class RefreshScheduler
     public RefreshScheduler(
         IBatteryProvider provider,
         Action refreshWithoutWaiting,
-        Func<Task<(bool Ran, BatteryStatus? Status)>> refreshAsync)
+        Func<Task<(bool Ran, bool AllExpectedDevicesConnected)>> refreshAsync)
     {
         _provider = provider;
         _refreshWithoutWaiting = refreshWithoutWaiting;
@@ -63,16 +63,17 @@ internal sealed class RefreshScheduler
 
     private void OnPollTimerTick(object? sender, EventArgs e) => _refreshWithoutWaiting();
 
-    // First refresh once the message loop runs, so awaited reads resume on the UI thread.
+    // The first read and its follow-ups start once the message loop runs, so awaited reads resume on the UI thread. A mouse in
+    // light sleep can miss the first read; the follow-up reads go on until every expected device is connected.
     private void OnFirstIdle(object? sender, EventArgs e)
     {
         Application.Idle -= OnFirstIdle;
         _uiContext ??= SynchronizationContext.Current;
-        _refreshWithoutWaiting();
+        StartFollowUpTimer(_followUpSchedule.Restart());
     }
 
     // Raised on a background thread. Before the first idle there is no UI context yet; dropping the change is safe then,
-    // because the first idle starts a refresh anyway.
+    // because the first idle starts the follow-up reads anyway.
     private void OnChangeDetected() => _uiContext?.Post(RestartFollowUpOnUiThread, null);
 
     private void RestartFollowUpOnUiThread(object? state)
@@ -106,11 +107,11 @@ internal sealed class RefreshScheduler
     {
         _followUpTimer.Stop();
         var generation = _followUpSchedule.Generation;
-        var (ran, status) = await _refreshAsync();
+        var (ran, allExpectedDevicesConnected) = await _refreshAsync();
         if (_stopped)
             return;
 
-        if (_followUpSchedule.Finish(generation, ran, status) is { } delayMs)
+        if (_followUpSchedule.Finish(generation, ran, allExpectedDevicesConnected) is { } delayMs)
             StartFollowUpTimer(delayMs);
     }
 

@@ -7,9 +7,6 @@ public class FollowUpScheduleTests
     private const int FirstDelayMs = 1000;
     private const int SecondDelayMs = 5000;
 
-    private static BatteryStatus Status(ConnectionState connection) =>
-        TestData.Status(connection == ConnectionState.Connected ? 80 : null, ChargingState.Unknown, connection);
-
     private static FollowUpSchedule StartedSchedule(out int generation)
     {
         var schedule = new FollowUpSchedule();
@@ -19,11 +16,11 @@ public class FollowUpScheduleTests
     }
 
     [Fact]
-    public void A_connected_read_stops_the_follow_up()
+    public void A_read_with_every_expected_device_connected_stops_the_follow_up()
     {
         var schedule = StartedSchedule(out var generation);
 
-        Assert.Null(schedule.Finish(generation, ran: true, Status(ConnectionState.Connected)));
+        Assert.Null(schedule.Finish(generation, ran: true, allExpectedDevicesConnected: true));
     }
 
     [Fact]
@@ -31,29 +28,19 @@ public class FollowUpScheduleTests
     {
         var schedule = StartedSchedule(out var generation);
 
-        Assert.Equal(FirstDelayMs, schedule.Finish(generation, ran: false, status: null));
-    }
-
-    [Theory]
-    [InlineData(ConnectionState.Asleep)]
-    [InlineData(ConnectionState.NotFound)]
-    public void A_read_without_a_connected_mouse_advances_to_the_next_step(ConnectionState connection)
-    {
-        var schedule = StartedSchedule(out var generation);
-
-        Assert.Equal(SecondDelayMs, schedule.Finish(generation, ran: true, Status(connection)));
+        Assert.Equal(FirstDelayMs, schedule.Finish(generation, ran: false, allExpectedDevicesConnected: false));
     }
 
     [Fact]
-    public void A_failed_read_advances_to_the_next_step()
+    public void A_read_with_a_device_not_connected_advances_to_the_next_step()
     {
         var schedule = StartedSchedule(out var generation);
 
-        Assert.Equal(SecondDelayMs, schedule.Finish(generation, ran: true, status: null));
+        Assert.Equal(SecondDelayMs, schedule.Finish(generation, ran: true, allExpectedDevicesConnected: false));
     }
 
     [Fact]
-    public void A_mouse_that_never_connects_is_followed_up_on_the_whole_schedule()
+    public void A_device_that_never_connects_is_followed_up_on_the_whole_schedule()
     {
         // 1 s, then one minute each of 5 s, 10 s, 15 s and 30 s delays
         int[] OneMinuteOf(int delayMs) => Enumerable.Repeat(delayMs, 60_000 / delayMs).ToArray();
@@ -66,7 +53,7 @@ public class FollowUpScheduleTests
     {
         var schedule = new FollowUpSchedule();
         var delays = new List<int> { schedule.Restart() };
-        while (schedule.Finish(schedule.Generation, ran: true, status: null) is { } delay)
+        while (schedule.Finish(schedule.Generation, ran: true, allExpectedDevicesConnected: false) is { } delay)
             delays.Add(delay);
         return delays;
     }
@@ -77,7 +64,7 @@ public class FollowUpScheduleTests
         var schedule = StartedSchedule(out var generationBeforeRead);
         schedule.Restart();
 
-        Assert.Null(schedule.Finish(generationBeforeRead, ran: true, Status(ConnectionState.NotFound)));
-        Assert.Equal(SecondDelayMs, schedule.Finish(schedule.Generation, ran: true, status: null));
+        Assert.Null(schedule.Finish(generationBeforeRead, ran: true, allExpectedDevicesConnected: false));
+        Assert.Equal(SecondDelayMs, schedule.Finish(schedule.Generation, ran: true, allExpectedDevicesConnected: false));
     }
 }

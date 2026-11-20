@@ -128,14 +128,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void RefreshWithoutWaiting() =>
         BackgroundWork.RunWithoutWaiting(RefreshAsync, "Battery refresh failed");
 
-    /// <summary>Ran is false when skipped; Status is null when skipped or the read failed.</summary>
-    private async Task<(bool Ran, BatteryStatus? Status)> RefreshAsync()
+    /// <summary>Ran is false when skipped; AllExpectedDevicesConnected is false when skipped or the read failed.</summary>
+    private async Task<(bool Ran, bool AllExpectedDevicesConnected)> RefreshAsync()
     {
         if (_refreshing || _exited)
         {
             if (_refreshing && _stuckReadWatch.ShouldReport(Environment.TickCount64))
                 AppLog.Warn("Battery read still running", ("seconds", (int)StuckReadAfter.TotalSeconds));
-            return (false, null);
+            return (false, false);
         }
 
         _refreshing = true;
@@ -156,7 +156,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         if (_exited) // the tray icon is gone if the app exited during the read
-            return (true, null);
+            return (true, false);
 
         _readings = readings;
         var devices = CurrentDevices();
@@ -164,8 +164,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
         ShowTrayDevice(devices, trayHistoryGotLine);
         NotifyAlerts();
         SaveFirstTrayDevice();
-        return (true, _devices?.Tray.Status);
+        return (true, AllExpectedDevicesConnected());
     }
+
+    // The simulator ignores the remembered devices: they belong to the real devices, which it does not show.
+    // shortcut: remembered devices are never forgotten, so a device the user no longer has keeps the follow-up reads
+    // running to the end of their schedule (~4 min) after every start and change; upgrade when a "forget device" action exists.
+    private bool AllExpectedDevicesConnected() =>
+        ExpectedDevices.AllConnected(_isSimulator ? [] : _settings.DeviceNames.Keys.ToList(), _readings);
 
     // The simulator ignores the saved tray device and names: they belong to the real devices, which it does not show.
     private TrayDevices CurrentDevices() => _isSimulator
