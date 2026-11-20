@@ -18,16 +18,15 @@ public class HidPpChannelTests
         Assert.Equal(FirstId, HidPpChannel.NextSoftwareId(LastId));
     }
 
-    [Fact]
-    public void The_software_id_is_never_0_or_F()
+    [Theory]
+    [MemberData(nameof(EverySoftwareId))]
+    public void The_software_id_is_never_0_or_F(byte currentSoftwareId)
     {
-        var id = LastId;
-        for (var step = 0; step < 3 * LastId; step++)
-        {
-            id = HidPpChannel.NextSoftwareId(id);
-            Assert.InRange(id, FirstId, LastId);
-        }
+        Assert.InRange(HidPpChannel.NextSoftwareId(currentSoftwareId), FirstId, LastId);
     }
+
+    public static IEnumerable<object[]> EverySoftwareId() =>
+        Enumerable.Range(FirstId, LastId - FirstId + 1).Select(softwareId => new object[] { (byte)softwareId });
 
     [Fact]
     public void A_HID_plus_plus_1_error_is_no_answer()

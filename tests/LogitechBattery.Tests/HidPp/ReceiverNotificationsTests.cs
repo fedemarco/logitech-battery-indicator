@@ -51,10 +51,16 @@ public class ReceiverNotificationsTests
     }
 
     [Fact]
-    public void Nothing_is_written_when_wireless_is_already_on() =>
-        Assert.False(ReceiverNotifications.TryEnableWireless([0x00, 0x01, 0x00], out _));
+    public void Nothing_is_written_when_wireless_is_already_on()
+    {
+        Assert.False(ReceiverNotifications.TryEnableWireless([0x00, 0x01, 0x00], out var updated));
+        Assert.Empty(updated);
+    }
 
     [Fact]
-    public void Nothing_is_written_when_the_receiver_answers_with_fewer_than_three_flag_bytes() =>
-        Assert.False(ReceiverNotifications.TryEnableWireless([0x00, 0x00], out _));
+    public void Nothing_is_written_when_the_receiver_answers_with_fewer_than_three_flag_bytes()
+    {
+        Assert.False(ReceiverNotifications.TryEnableWireless([0x00, 0x00], out var updated));
+        Assert.Empty(updated);
+    }
 }

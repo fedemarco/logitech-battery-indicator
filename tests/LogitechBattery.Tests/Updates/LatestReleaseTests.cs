@@ -6,7 +6,7 @@ namespace LogitechBattery.Tests;
 public class LatestReleaseTests
 {
     private static LatestRelease? Parse(string json) =>
-        LatestRelease.TryParse(json, out var release, out _) ? release : null;
+        LatestRelease.TryParse(json, out var release, out var problemNotNeeded) ? release : null;
 
     private static string ProblemOf(string json)
     {

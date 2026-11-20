@@ -31,7 +31,7 @@ internal sealed class FakeDevice
     public FakeDevice WithUnitId(string unitId) =>
         WithDeviceInfo(request => LongResponse(request, [UnitIdEntityCount, .. Convert.FromHexString(unitId)]));
 
-    public FakeDevice WithDeviceInfoError(byte errorCode) => WithDeviceInfo(_ => new HidPpAnswer(null, errorCode));
+    public FakeDevice WithDeviceInfoError(byte errorCode) => WithDeviceInfo(ErrorAnswer(errorCode));
 
     /// <summary>The getDeviceInfo answer is a short report, so its parameters are too few to hold a unit ID.</summary>
     public FakeDevice WithTooShortDeviceInfo() => WithDeviceInfo(request => ShortResponse(request, [UnitIdEntityCount, 0xAA, 0xBB]));
@@ -96,6 +96,12 @@ internal sealed class FakeDevice
         var position = request[HidPpMessage.ParamsOffset];
         var chunk = Encoding.ASCII.GetBytes(_name.Skip(position).Take(NameChunkLength).ToArray());
         return LongResponse(request, chunk);
+    }
+
+    private static Func<byte[], HidPpAnswer> ErrorAnswer(byte errorCode)
+    {
+        HidPpAnswer AnswerWithError(byte[] request) => new(null, errorCode);
+        return AnswerWithError;
     }
 
     private static HidPpAnswer LongResponse(byte[] request, byte[] parameters) => Response(request, HidPpMessage.LongId, HidPpMessage.LongLength, parameters);

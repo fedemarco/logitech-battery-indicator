@@ -31,12 +31,13 @@ public class TrayIconAssetTests
             .Distinct();
     }
 
-    private static string AssetsFolder()
+    private static string AssetsFolder() => Path.Combine(FindRepositoryRoot().FullName, "src", "LogitechBattery.App", "Assets");
+
+    private static DirectoryInfo FindRepositoryRoot()
     {
         var folder = new DirectoryInfo(AppContext.BaseDirectory);
         while (folder is not null && !File.Exists(Path.Combine(folder.FullName, "LogitechBattery.slnx")))
             folder = folder.Parent;
-        return Path.Combine(folder?.FullName ?? throw new DirectoryNotFoundException("LogitechBattery.slnx not found above the test folder."),
-            "src", "LogitechBattery.App", "Assets");
+        return folder ?? throw new DirectoryNotFoundException("LogitechBattery.slnx not found above the test folder.");
     }
 }
