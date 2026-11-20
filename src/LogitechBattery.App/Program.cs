@@ -23,6 +23,7 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += OnUiThreadException;
+        AppDomain.CurrentDomain.UnhandledException += OnBackgroundThreadException;
         var useMock = args.Contains(MockFlag);
         var version = AppVersion.InformationalVersionOf(Assembly.GetExecutingAssembly()) ?? "unknown";
         var mode = useMock ? "mock" : "HID++";
@@ -33,6 +34,16 @@ internal static class Program
     // Logging the exception and returning keeps the tray app running.
     private static void OnUiThreadException(object sender, ThreadExceptionEventArgs e) =>
         AppLog.Error("Unhandled UI exception", AppLog.FailureWithStack(e.Exception));
+
+    // The process still ends after this (for example a HID reader thread crashes); the line puts the cause in log.txt
+    // instead of only in the Windows event log. AppLog writes and closes the file before it returns, so the line is on disk.
+    private static void OnBackgroundThreadException(object sender, UnhandledExceptionEventArgs e)
+    {
+        if (e.ExceptionObject is Exception exception)
+            AppLog.Error("Unhandled exception", AppLog.FailureWithStack(exception));
+        else
+            AppLog.Error("Unhandled exception", ("error", e.ExceptionObject?.GetType().Name ?? "unknown"));
+    }
 
     // ThreadException only sees exceptions inside the message loop, so a failing constructor must be logged here.
     private static TrayApplicationContext CreateTrayContext(bool useMock)

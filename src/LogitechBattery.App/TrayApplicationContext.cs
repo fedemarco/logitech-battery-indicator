@@ -323,6 +323,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void ExitApp()
     {
+        AppLog.Info("Stopped LogitechBattery"); // a hard kill leaves no such line
         _exited = true;
         _overlay?.Dispose();
         _overlay = null;
