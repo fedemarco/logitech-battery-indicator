@@ -50,6 +50,8 @@ internal sealed class RefreshScheduler
     public void Stop()
     {
         _stopped = true;
+        // An exit before the first idle leaves this hook in place; it would start the disposed follow-up timer.
+        Application.Idle -= OnFirstIdle;
         if (_provider is HidPpBatteryProvider hidProvider)
         {
             hidProvider.ChangeDetected -= OnChangeDetected;
