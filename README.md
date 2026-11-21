@@ -1,6 +1,6 @@
 # Logitech Battery Indicator
 
-A small Windows tray app that shows the battery level of Logitech devices, without Logitech G HUB. It is made for and tested with the **Logitech PRO X2 SUPERSTRIKE** mouse; other devices that report their battery the same way are read too.
+A small Windows tray app that shows the battery level of Logitech devices that report it with HID++ Unified Battery, without Logitech G HUB. Tested with the **PRO X2 SUPERSTRIKE** and **PRO X 2** mice, also both at once.
 
 The tray icon shows the charge at a glance; hover it for the exact percentage. The app reads the devices directly over Logitech's HID++ protocol, through their Lightspeed receivers or the USB cable.
 
