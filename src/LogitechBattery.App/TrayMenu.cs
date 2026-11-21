@@ -12,6 +12,7 @@ internal static class TrayMenu
         ("85% discharging", MockMode.Discharging85),
         ("25% discharging", MockMode.Discharging25),
         ("10% discharging", MockMode.Discharging10),
+        ("10% discharging, mouse and keyboard", MockMode.MouseAndKeyboardDischarging10),
         ("60% charging", MockMode.Charging60),
         ("100% full", MockMode.Full100),
         ("Asleep", MockMode.Asleep),

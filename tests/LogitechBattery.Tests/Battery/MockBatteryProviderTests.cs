@@ -84,4 +84,17 @@ public class MockBatteryProviderTests
         var headset = readings[2].Status!;
         Assert.Equal((ConnectionState.Asleep, (int?)null, ChargingState.Unknown), (headset.Connection, headset.Percent, headset.Charging));
     }
+
+    [Fact]
+    public void Mouse_and_keyboard_low_mode_reports_both_at_10_percent_discharging()
+    {
+        var provider = new MockBatteryProvider(new FakeTime()) { SeveralDevices = true, Mode = MockMode.MouseAndKeyboardDischarging10 };
+
+        var readings = ReadAll(provider);
+
+        var mouse = readings[0].Status!;
+        Assert.Equal((ConnectionState.Connected, 10, ChargingState.Discharging), (mouse.Connection, mouse.Percent, mouse.Charging));
+        var keyboard = readings[1].Status!;
+        Assert.Equal((ConnectionState.Connected, 10, ChargingState.Discharging), (keyboard.Connection, keyboard.Percent, keyboard.Charging));
+    }
 }

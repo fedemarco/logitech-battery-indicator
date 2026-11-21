@@ -8,6 +8,7 @@ public enum MockMode
     Discharging85,
     Discharging25,
     Discharging10,
+    MouseAndKeyboardDischarging10,
     Charging60,
     Full100,
     Asleep,
@@ -32,6 +33,7 @@ public sealed class MockBatteryProvider : IBatteryProvider
     private const int HighestChargingPercent = BatteryStatus.FullPercent - 1;
 
     private const int KeyboardPercent = 60;
+    private const int LowPercent = 10;
 
     private static readonly DeviceInfo MockMouse = new(DeviceId.Parse("00000001"), "Mock mouse");
     private static readonly DeviceInfo MockKeyboard = new(DeviceId.Parse("00000002"), "Mock keyboard");
@@ -67,7 +69,7 @@ public sealed class MockBatteryProvider : IBatteryProvider
         var readings = new List<DeviceReading> { new(MockMouse, MouseStatus(now)) };
         if (SeveralDevices)
         {
-            readings.Add(new DeviceReading(MockKeyboard, ToStatus(Connected(KeyboardPercent, ChargingState.Discharging), now)));
+            readings.Add(new DeviceReading(MockKeyboard, ToStatus(KeyboardReading(), now)));
             readings.Add(new DeviceReading(MockHeadset, ToStatus(NoReading(ConnectionState.Asleep), now)));
         }
         return Task.FromResult<IReadOnlyList<DeviceReading>>(readings);
@@ -80,13 +82,22 @@ public sealed class MockBatteryProvider : IBatteryProvider
             MockMode.Auto => AutoReading(),
             MockMode.Discharging85 => Connected(85, ChargingState.Discharging),
             MockMode.Discharging25 => Connected(25, ChargingState.Discharging),
-            MockMode.Discharging10 => Connected(10, ChargingState.Discharging),
+            MockMode.Discharging10 => Connected(LowPercent, ChargingState.Discharging),
+            MockMode.MouseAndKeyboardDischarging10 => Connected(LowPercent, ChargingState.Discharging),
             MockMode.Charging60 => Connected(60, ChargingState.Charging),
             MockMode.Full100 => Connected(BatteryStatus.FullPercent, ChargingState.Full),
             MockMode.Asleep => NoReading(ConnectionState.Asleep),
             _ => NoReading(ConnectionState.NotFound),
         };
         return ToStatus(reading, now);
+    }
+
+    // Both devices low in one read: shows whether Windows displays two alerts from one tray icon.
+    private Reading KeyboardReading()
+    {
+        if (_mode == MockMode.MouseAndKeyboardDischarging10)
+            return Connected(LowPercent, ChargingState.Discharging);
+        return Connected(KeyboardPercent, ChargingState.Discharging);
     }
 
     private static BatteryStatus ToStatus(Reading reading, DateTimeOffset now) =>
