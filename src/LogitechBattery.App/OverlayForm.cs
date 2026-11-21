@@ -1,6 +1,8 @@
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using LogitechBattery.Battery;
+using LogitechBattery.History;
+using LogitechBattery.Tray;
 
 namespace LogitechBattery;
 

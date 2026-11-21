@@ -1,3 +1,5 @@
+using LogitechBattery.Logging;
+
 namespace LogitechBattery;
 
 internal static class BackgroundWork

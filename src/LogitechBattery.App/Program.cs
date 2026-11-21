@@ -1,6 +1,11 @@
 using System.Diagnostics;
 using System.Reflection;
 using LogitechBattery.Battery;
+using LogitechBattery.Devices;
+using LogitechBattery.Diagnostics;
+using LogitechBattery.History;
+using LogitechBattery.Logging;
+using LogitechBattery.Settings;
 
 namespace LogitechBattery;
 

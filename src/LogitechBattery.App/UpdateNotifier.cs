@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using LogitechBattery.Logging;
 using LogitechBattery.Updates;
 using Timer = System.Windows.Forms.Timer;
 

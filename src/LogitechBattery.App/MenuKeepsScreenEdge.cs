@@ -1,3 +1,5 @@
+using LogitechBattery.Tray;
+
 namespace LogitechBattery;
 
 /// <summary>The tray menu keeps the edge nearest the screen edge when its size changes while it is open, so it does not grow over the taskbar.</summary>

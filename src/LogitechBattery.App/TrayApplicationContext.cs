@@ -1,5 +1,11 @@
 using System.Reflection;
+using LogitechBattery.Alerts;
 using LogitechBattery.Battery;
+using LogitechBattery.HidPp;
+using LogitechBattery.History;
+using LogitechBattery.Logging;
+using LogitechBattery.Settings;
+using LogitechBattery.Tray;
 
 namespace LogitechBattery;
 

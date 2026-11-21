@@ -1,4 +1,6 @@
+using LogitechBattery.Alerts;
 using LogitechBattery.Battery;
+using LogitechBattery.History;
 
 namespace LogitechBattery;
 

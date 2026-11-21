@@ -1,4 +1,5 @@
 using LogitechBattery.Battery;
+using LogitechBattery.Tray;
 
 namespace LogitechBattery.App.Tests;
 

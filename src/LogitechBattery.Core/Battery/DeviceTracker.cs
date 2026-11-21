@@ -1,3 +1,8 @@
+using LogitechBattery.Alerts;
+using LogitechBattery.HidPp;
+using LogitechBattery.History;
+using LogitechBattery.Settings;
+
 namespace LogitechBattery.Battery;
 
 /// <summary>A notification to show: which device, what happened and at what charge.</summary>

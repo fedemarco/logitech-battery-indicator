@@ -1,4 +1,5 @@
 using System.Text;
+using LogitechBattery.History;
 
 namespace LogitechBattery.HidPp;
 

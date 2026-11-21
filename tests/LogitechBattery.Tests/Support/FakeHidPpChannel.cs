@@ -1,3 +1,4 @@
+using LogitechBattery.Devices;
 using LogitechBattery.HidPp;
 
 namespace LogitechBattery.Tests;

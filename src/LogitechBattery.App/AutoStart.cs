@@ -1,3 +1,4 @@
+using LogitechBattery.Logging;
 using Microsoft.Win32;
 
 namespace LogitechBattery;

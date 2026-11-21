@@ -1,3 +1,5 @@
+using LogitechBattery.History;
+
 namespace LogitechBattery;
 
 /// <summary>Windows tray menus close after any click. Choices stay open so that several can be changed and the check mark is seen; actions close the menu.</summary>

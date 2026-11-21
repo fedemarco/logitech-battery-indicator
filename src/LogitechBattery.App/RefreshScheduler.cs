@@ -1,5 +1,7 @@
 using Microsoft.Win32;
 using LogitechBattery.Battery;
+using LogitechBattery.Devices;
+using LogitechBattery.Logging;
 using Timer = System.Windows.Forms.Timer;
 
 namespace LogitechBattery;
