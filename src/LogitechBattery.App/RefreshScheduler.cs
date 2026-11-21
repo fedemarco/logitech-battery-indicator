@@ -107,12 +107,26 @@ internal sealed class RefreshScheduler
     {
         _followUpTimer.Stop();
         var generation = _followUpSchedule.Generation;
-        var (ran, allExpectedDevicesConnected) = await _refreshAsync();
+        var (ran, allExpectedDevicesConnected) = await ReadForFollowUpAsync();
         if (_stopped)
             return;
 
         if (_followUpSchedule.Finish(generation, ran, allExpectedDevicesConnected) is { } delayMs)
             StartFollowUpTimer(delayMs);
+    }
+
+    // The timer is stopped while a read runs, so a failure must not end the schedule: the next read may succeed.
+    private async Task<(bool Ran, bool AllExpectedDevicesConnected)> ReadForFollowUpAsync()
+    {
+        try
+        {
+            return await _refreshAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Follow-up read failed", AppLog.FailureWithStack(ex));
+            return (Ran: true, AllExpectedDevicesConnected: false);
+        }
     }
 
     private void StartFollowUpTimer(int delayMs)
