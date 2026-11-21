@@ -53,6 +53,7 @@ internal static class TrayMenu
         exitItem.Click += OnExitClicked;
         menu.Items.Add(exitItem);
         MenuStaysOpenForToggles.Attach(menu);
+        MenuKeepsScreenEdge.Attach(menu);
         return menu;
     }
 
