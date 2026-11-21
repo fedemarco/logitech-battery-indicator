@@ -28,6 +28,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="LogitechBattery.App.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\LogitechBattery.Core\LogitechBattery.Core.csproj" />
   </ItemGroup>
 

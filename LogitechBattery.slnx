@@ -2,4 +2,5 @@
   <Project Path="src/LogitechBattery.Core/LogitechBattery.Core.csproj" />
   <Project Path="src/LogitechBattery.App/LogitechBattery.App.csproj" />
   <Project Path="tests/LogitechBattery.Tests/LogitechBattery.Tests.csproj" />
+  <Project Path="tests/LogitechBattery.App.Tests/LogitechBattery.App.Tests.csproj" />
 </Solution>
