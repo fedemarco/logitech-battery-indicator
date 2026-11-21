@@ -2,7 +2,7 @@ using LogitechBattery.Alerts;
 using LogitechBattery.Battery;
 using LogitechBattery.History;
 
-namespace LogitechBattery;
+namespace LogitechBattery.Menu;
 
 /// <summary>"Notifications" submenu: the low battery level, the full-charge switch and the new-version switch. Texts and check marks are set each time it opens.</summary>
 internal static class NotificationsMenu

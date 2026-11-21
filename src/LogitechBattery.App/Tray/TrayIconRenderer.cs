@@ -2,9 +2,8 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using LogitechBattery.Battery;
-using LogitechBattery.Tray;
 
-namespace LogitechBattery;
+namespace LogitechBattery.Tray;
 
 /// <summary>Draws a <see cref="TrayIndicator"/> from the embedded razer-taskbar gauge icons (32x32 PNG), colors as-is.</summary>
 internal static class TrayIconRenderer

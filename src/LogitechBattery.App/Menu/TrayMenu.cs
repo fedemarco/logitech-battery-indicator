@@ -1,8 +1,9 @@
 using System.ComponentModel;
 using LogitechBattery.Battery;
 using LogitechBattery.History;
+using LogitechBattery.Tray;
 
-namespace LogitechBattery;
+namespace LogitechBattery.Menu;
 
 /// <summary>The tray icon's context menu. The simulator gets its own entries; a real provider gets the start-with-Windows and clear-history entries.</summary>
 internal static class TrayMenu

@@ -3,7 +3,7 @@ using LogitechBattery.Logging;
 using LogitechBattery.Updates;
 using Timer = System.Windows.Forms.Timer;
 
-namespace LogitechBattery;
+namespace LogitechBattery.Tray;
 
 /// <summary>
 /// Everything about new app versions: the daily automatic check (only while the setting is on), the "Check for updates…" item,

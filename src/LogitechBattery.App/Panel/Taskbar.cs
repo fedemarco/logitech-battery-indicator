@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using LogitechBattery.Tray;
 
-namespace LogitechBattery;
+namespace LogitechBattery.Panel;
 
 /// <summary>Asks Windows where the taskbar is. The answer includes an auto-hidden taskbar, which the working area ignores.</summary>
 internal static class Taskbar

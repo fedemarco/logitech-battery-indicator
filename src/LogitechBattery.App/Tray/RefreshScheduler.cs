@@ -4,7 +4,7 @@ using LogitechBattery.Devices;
 using LogitechBattery.Logging;
 using Timer = System.Windows.Forms.Timer;
 
-namespace LogitechBattery;
+namespace LogitechBattery.Tray;
 
 /// <summary>Decides when the battery is read: a poll timer, follow-up reads after a change, the first idle (with follow-up reads) and a PC resume.</summary>
 internal sealed class RefreshScheduler

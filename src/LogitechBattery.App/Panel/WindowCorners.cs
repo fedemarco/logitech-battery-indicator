@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace LogitechBattery;
+namespace LogitechBattery.Panel;
 
 /// <summary>Rounded corners and a system border for a borderless window. DWM draws both on Windows 11; Windows 10 has no such attribute.</summary>
 internal static class WindowCorners

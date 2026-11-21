@@ -6,6 +6,7 @@ using LogitechBattery.Diagnostics;
 using LogitechBattery.History;
 using LogitechBattery.Logging;
 using LogitechBattery.Settings;
+using LogitechBattery.Tray;
 
 namespace LogitechBattery;
 

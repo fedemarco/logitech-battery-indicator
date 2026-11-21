@@ -4,10 +4,11 @@ using LogitechBattery.Battery;
 using LogitechBattery.HidPp;
 using LogitechBattery.History;
 using LogitechBattery.Logging;
+using LogitechBattery.Menu;
+using LogitechBattery.Panel;
 using LogitechBattery.Settings;
-using LogitechBattery.Tray;
 
-namespace LogitechBattery;
+namespace LogitechBattery.Tray;
 
 internal sealed class TrayApplicationContext : ApplicationContext
 {

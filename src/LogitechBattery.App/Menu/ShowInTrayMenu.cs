@@ -2,7 +2,7 @@ using LogitechBattery.Battery;
 using LogitechBattery.History;
 using LogitechBattery.Tray;
 
-namespace LogitechBattery;
+namespace LogitechBattery.Menu;
 
 /// <summary>"Show in tray" submenu: one entry per device. It is visible only with several devices; the entries are kept up to date after every refresh, so the submenu arrow shows from the start.</summary>
 internal sealed class ShowInTrayMenu

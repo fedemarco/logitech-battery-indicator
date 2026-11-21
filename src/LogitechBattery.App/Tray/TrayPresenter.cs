@@ -1,8 +1,7 @@
 using LogitechBattery.Battery;
 using LogitechBattery.History;
-using LogitechBattery.Tray;
 
-namespace LogitechBattery;
+namespace LogitechBattery.Tray;
 
 /// <summary>Owns the tray icon and what it shows: the battery icon, the tooltip and the balloons.</summary>
 internal sealed class TrayPresenter : IDisposable

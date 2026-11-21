@@ -1,5 +1,6 @@
 using LogitechBattery.Alerts;
 using LogitechBattery.Battery;
+using LogitechBattery.Menu;
 
 namespace LogitechBattery.App.Tests;
 

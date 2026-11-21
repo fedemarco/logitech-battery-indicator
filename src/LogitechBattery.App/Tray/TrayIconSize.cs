@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace LogitechBattery;
+namespace LogitechBattery.Tray;
 
 /// <summary>The size of the small icon the taskbar shows: 16 px at 100 % scaling, 20, 24, 28 and 32 px at 125, 150, 175 and 200 %.</summary>
 internal static class TrayIconSize

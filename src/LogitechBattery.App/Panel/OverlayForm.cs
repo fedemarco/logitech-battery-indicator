@@ -4,7 +4,7 @@ using LogitechBattery.Battery;
 using LogitechBattery.History;
 using LogitechBattery.Tray;
 
-namespace LogitechBattery;
+namespace LogitechBattery.Panel;
 
 /// <summary>The panel that opens on a left-click of the tray icon: status, last charge, estimate and the battery graph.</summary>
 internal sealed class OverlayForm : Form
