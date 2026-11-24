@@ -256,8 +256,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         try
         {
             var update = _tracker.Update(_readings, _settings.Alerts);
-            foreach (var alert in update.Alerts)
-                ShowAlert(alert);
+            if (update.Alerts.Count > 0)
+                ShowAlerts(update.Alerts);
             if (update.NamesToSave is { } names && !_isSimulator)
                 SaveDeviceNames(names);
         }
@@ -307,13 +307,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void ShowUpdateBalloon(string title, string text) =>
         _presenter.ShowBalloon(title, text, ToolTipIcon.Info);
 
-    private void ShowAlert(DeviceAlert deviceAlert)
+    private void ShowAlerts(IReadOnlyList<DeviceAlert> deviceAlerts)
     {
-        var (title, text) = BatteryAlertText.For(deviceAlert.Alert, deviceAlert.Percent, deviceAlert.DeviceName);
-        var icon = deviceAlert.Alert == BatteryAlert.Full ? ToolTipIcon.Info : ToolTipIcon.Warning;
-        AppLog.Info("Notification", ("title", title), ("percent", deviceAlert.Percent));
+        foreach (var deviceAlert in deviceAlerts)
+            LogAlert(deviceAlert);
+
+        var balloon = BatteryAlertText.ForRead(deviceAlerts);
+        var icon = balloon.IsWarning ? ToolTipIcon.Warning : ToolTipIcon.Info;
         _updateNotifier.OnOtherBalloonShown();
-        _presenter.ShowBalloon(title, text, icon);
+        _presenter.ShowBalloon(balloon.Title, balloon.Text, icon);
+    }
+
+    private static void LogAlert(DeviceAlert deviceAlert)
+    {
+        var alertText = BatteryAlertText.For(deviceAlert.Alert, deviceAlert.Percent, deviceAlert.DeviceName);
+        AppLog.Info("Notification", ("title", alertText.Title), ("percent", deviceAlert.Percent));
     }
 
     private void RecomputeDrainRate()
