@@ -79,21 +79,27 @@ public sealed class HidPpListener
     {
         lock (_channels)
         {
-            ForgetClosedChannels();
-            foreach (var device in HidPpDevices.Find().Where(device => !_channels.ContainsKey(device.Key)))
+            var devices = HidPpDevices.Find();
+            ForgetGoneChannels(devices.Select(device => device.Key).ToHashSet());
+            foreach (var device in devices.Where(device => !_channels.ContainsKey(device.Key)))
                 Open(device);
         }
     }
 
-    private void ForgetClosedChannels()
+    // The USB change event can come before the reader notices the unplug, so a channel whose device is no longer
+    // listed counts as gone too; otherwise "closed" would be logged only at the next USB change.
+    private void ForgetGoneChannels(IReadOnlySet<string> listedDeviceKeys)
     {
-        foreach (var (key, channel) in _channels.Where(entry => entry.Value.IsClosed).ToList())
+        foreach (var (key, channel) in _channels.Where(entry => IsGone(entry.Value, entry.Key, listedDeviceKeys)).ToList())
         {
             Log($"{channel.ProductId:X4}  closed");
             channel.Dispose();
             _channels.Remove(key);
         }
     }
+
+    private static bool IsGone(HidPpChannel channel, string deviceKey, IReadOnlySet<string> listedDeviceKeys) =>
+        channel.IsClosed || !listedDeviceKeys.Contains(deviceKey);
 
     private void Open(HidPpDevice device)
     {
