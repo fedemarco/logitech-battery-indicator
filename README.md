@@ -13,7 +13,7 @@ The tray icon shows the charge at a glance; hover it for the exact percentage. T
 - **Battery in the tray** – the icon shows the level and whether the device is charging; the tooltip shows the exact percentage.
 - **Several devices** – every supported device on every receiver and cable is read, also two receivers of the same model. Each device has its own notifications and history; **Show in tray** chooses the one the icon shows, and the tooltip lists the others.
 - **Instant updates** – the tray changes within about a second when a device sleeps, wakes, is switched off or on, or when the receiver or cable is plugged in or out.
-- **Notifications** – a Windows notification when the battery is low (15 % by default, 10 % or 20 % in the tray menu), critical (5 %) and fully charged (can be switched off in the tray menu).
+- **Notifications** – a Windows notification when the battery is low (15 % by default, 10 % or 20 % in the tray menu), critical (5 %) and fully charged (can be switched off in the tray menu). When several devices need a notification at the same time, one notification lists them all.
 - **Start with Windows** – on by default, can be switched off in the tray menu. No admin rights needed.
 - **History panel** – left-click the tray icon for a 24 h / 7 day graph of the battery level and the time of the last charge.
 - **Time left** – an estimate of the hours left, based on how fast the battery drained over the last week.
@@ -55,7 +55,7 @@ What's new: see the [releases](https://github.com/fedemarco/logitech-battery-ind
 | Left-click the tray icon | Opens the history panel; Esc or a click elsewhere closes it |
 | Right-click the tray icon | Menu: Show in tray (only when more than one device is connected, or the device in the tray is off: choose which device the icon shows), Notifications (low battery level, fully charged, new app versions), Check for updates…, Start with Windows, Clear history…, Exit |
 
-Icon colors: green from 40 %, yellow from 20 %, red below 20 %. A separate "unknown" icon means the device in the tray is asleep, switched off or not found.
+Icon colors: green from 40 %, yellow from 20 %, red below 20 %. A separate "unknown" icon means the device in the tray gives no battery reading: "Asleep" while its receiver or cable is plugged in (the device is switched off or idle), "Not found" when it is not.
 
 ![The tray icon: a green battery gauge](docs/tray-icon.png)
 
