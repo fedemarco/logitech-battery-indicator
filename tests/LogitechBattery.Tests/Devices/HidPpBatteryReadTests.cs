@@ -17,7 +17,7 @@ public class HidPpBatteryReadTests
     {
         var read = ReadAnswerOnFakeRoute(new HidPpAnswer(null, ErrorCode));
 
-        Assert.Equal(HidPpBatteryProvider.RouteOutcome.Failed, read.Outcome);
+        Assert.Equal(BatteryStatusRequest.RouteOutcome.Failed, read.Outcome);
     }
 
     [Fact]
@@ -25,7 +25,7 @@ public class HidPpBatteryReadTests
     {
         var read = ReadAnswerOnFakeRoute(HidPpAnswer.Nothing);
 
-        Assert.Equal(HidPpBatteryProvider.RouteOutcome.NoAnswer, read.Outcome);
+        Assert.Equal(BatteryStatusRequest.RouteOutcome.NoAnswer, read.Outcome);
     }
 
     [Fact]
@@ -33,7 +33,7 @@ public class HidPpBatteryReadTests
     {
         var read = ReadAnswerOnFakeRoute(new HidPpAnswer(AnswerWithoutStatusBytes, null));
 
-        Assert.Equal(HidPpBatteryProvider.RouteOutcome.Failed, read.Outcome);
+        Assert.Equal(BatteryStatusRequest.RouteOutcome.Failed, read.Outcome);
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public class HidPpBatteryReadTests
     {
         var read = ReadAnswerOnFakeRoute(new HidPpAnswer(StatusReport(BatteryPercent, 0, 0, 0), null));
 
-        Assert.Equal(HidPpBatteryProvider.RouteOutcome.Answered, read.Outcome);
+        Assert.Equal(BatteryStatusRequest.RouteOutcome.Answered, read.Outcome);
         Assert.Equal(BatteryPercent, read.Status!.Percent);
     }
 
@@ -50,7 +50,7 @@ public class HidPpBatteryReadTests
     {
         var read = ReadStatusOn(new FakeHidPpChannel { Failure = new InvalidOperationException() });
 
-        Assert.Equal(HidPpBatteryProvider.RouteOutcome.Failed, read.Outcome);
+        Assert.Equal(BatteryStatusRequest.RouteOutcome.Failed, read.Outcome);
     }
 
     [Fact]
@@ -58,7 +58,7 @@ public class HidPpBatteryReadTests
     {
         var read = ReadStatusOn(new FakeHidPpChannel { Failure = new IOException() });
 
-        Assert.Equal(HidPpBatteryProvider.RouteOutcome.ChannelLost, read.Outcome);
+        Assert.Equal(BatteryStatusRequest.RouteOutcome.ChannelLost, read.Outcome);
     }
 
     [Fact]
@@ -71,11 +71,11 @@ public class HidPpBatteryReadTests
 
     private static byte[] AnswerWithoutStatusBytes => StatusReport();
 
-    private static HidPpBatteryProvider.RouteRead ReadAnswerOnFakeRoute(HidPpAnswer answer) =>
-        HidPpBatteryProvider.ReadAnswer(RouteOn(new FakeHidPpChannel()), answer, Now);
+    private static BatteryStatusRequest.RouteRead ReadAnswerOnFakeRoute(HidPpAnswer answer) =>
+        BatteryStatusRequest.ReadAnswer(RouteOn(new FakeHidPpChannel()), answer, Now);
 
-    private static HidPpBatteryProvider.RouteRead ReadStatusOn(FakeHidPpChannel channel) =>
-        HidPpBatteryProvider.ReadStatus(RouteOn(channel), Now, CancellationToken.None);
+    private static BatteryStatusRequest.RouteRead ReadStatusOn(FakeHidPpChannel channel) =>
+        BatteryStatusRequest.ReadStatus(RouteOn(channel), Now, CancellationToken.None);
 
     private static BatteryTarget RouteOn(FakeHidPpChannel channel) =>
         new(channel, DeviceIndex, BatteryFeatureIndex, new DeviceInfo(DeviceId.Parse("1A2B3C4D"), "Mouse"));
