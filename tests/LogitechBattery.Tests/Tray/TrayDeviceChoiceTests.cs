@@ -56,6 +56,25 @@ public class TrayDeviceChoiceTests
     }
 
     [Fact]
+    public void A_saved_device_that_was_not_read_is_asleep_when_the_placeholder_says_a_receiver_has_no_known_device()
+    {
+        var savedNames = new Dictionary<DeviceId, string> { [KeyboardId] = "G915" };
+
+        var chosen = TrayDeviceChoice.Pick([Reading(MouseId, "PRO X2"), TestData.AsleepPlaceholder()], KeyboardId, savedNames, Now);
+
+        Assert.Equal("G915", chosen!.Device.Name);
+        Assert.Equal(ConnectionState.Asleep, chosen.Status!.Connection);
+    }
+
+    [Fact]
+    public void Without_a_saved_device_the_first_real_device_is_chosen_before_a_trailing_placeholder()
+    {
+        var mouse = Reading(MouseId, "PRO X2");
+
+        Assert.Equal(mouse, TrayDeviceChoice.Pick([mouse, TestData.AsleepPlaceholder()], saved: null, NoNames, Now));
+    }
+
+    [Fact]
     public void Without_a_saved_device_the_first_device_is_chosen()
     {
         var mouse = Reading(MouseId, "PRO X2");

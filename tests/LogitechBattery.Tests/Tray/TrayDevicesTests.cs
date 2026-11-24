@@ -92,6 +92,21 @@ public class TrayDevicesTests
     }
 
     [Fact]
+    public void An_unread_saved_device_shows_asleep_and_the_placeholder_is_not_listed()
+    {
+        var names = new Dictionary<DeviceId, string> { [KeyboardId] = "G915" };
+
+        var devices = Build([Mouse(TestData.Status(85)), TestData.AsleepPlaceholder()], saved: KeyboardId, names);
+
+        Assert.Equal("G915", devices.TrayName);
+        Assert.Equal("Asleep", devices.StatusLine);
+        Assert.Equal(
+            [new TrayDeviceItem(MouseId, "PRO X2 · 85%", false), new TrayDeviceItem(KeyboardId, "G915 · asleep", true)],
+            devices.Items);
+        Assert.Equal([new OtherDevice("PRO X2", TestData.Status(85))], devices.Others);
+    }
+
+    [Fact]
     public void A_failed_reading_of_the_tray_device_has_a_read_failed_status_line() =>
         Assert.Equal("Battery read failed", Build([Mouse(status: null)]).StatusLine);
 }

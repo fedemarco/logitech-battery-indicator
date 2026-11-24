@@ -29,4 +29,11 @@ internal sealed class KnownDevices
     /// <summary>Asleep while the channel it was last seen on is still open (a receiver hears it wake up); NotFound once that channel is gone.</summary>
     public ConnectionState StateWhenNotAnswering(DeviceInfo device, IReadOnlySet<string> openChannelKeys) =>
         openChannelKeys.Contains(_lastSlots[device.Id].ChannelKey) ? ConnectionState.Asleep : ConnectionState.NotFound;
+
+    /// <summary>True when an open channel has no known device last seen on it: a device there may never have answered.</summary>
+    public bool AnyChannelWithoutDevice(IReadOnlySet<string> openChannelKeys) =>
+        openChannelKeys.Any(channelKey => !HasDeviceLastSeenOn(channelKey));
+
+    private bool HasDeviceLastSeenOn(string channelKey) =>
+        _lastSlots.Values.Any(slot => slot.ChannelKey == channelKey);
 }

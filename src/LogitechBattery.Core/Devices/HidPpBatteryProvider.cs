@@ -265,15 +265,24 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
         }
     }
 
-    /// <summary>One reading per known device, in first-seen order; a device that did not answer is Asleep or NotFound.</summary>
+    /// <summary>
+    /// One reading per known device, in first-seen order; a device that did not answer is Asleep or NotFound. The placeholder
+    /// comes last, and only while an open channel has no known device on it: that receiver may hold a device that never answered.
+    /// </summary>
     private IReadOnlyList<DeviceReading> ToReadings(Dictionary<DeviceId, BatteryStatus?> statuses, DateTimeOffset now)
     {
         if (_routes.Known.IsEmpty)
-            return [new DeviceReading(DeviceInfo.NoDeviceYet, NoReading(DeviceInfo.NoDeviceYet, MissingDeviceState(), now))];
+            return [PlaceholderReading(MissingDeviceState(), now)];
 
         var openChannelKeys = _channels.Where(channel => !channel.IsClosed).Select(channel => channel.Key).ToHashSet();
-        return _routes.Known.InFirstSeenOrder.Select(device => ReadingOf(device, statuses, openChannelKeys, now)).ToList();
+        var readings = _routes.Known.InFirstSeenOrder.Select(device => ReadingOf(device, statuses, openChannelKeys, now)).ToList();
+        if (_routes.Known.AnyChannelWithoutDevice(openChannelKeys))
+            readings.Add(PlaceholderReading(ConnectionState.Asleep, now));
+        return readings;
     }
+
+    private DeviceReading PlaceholderReading(ConnectionState state, DateTimeOffset now) =>
+        new(DeviceInfo.NoDeviceYet, NoReading(DeviceInfo.NoDeviceYet, state, now));
 
     private DeviceReading ReadingOf(DeviceInfo device, Dictionary<DeviceId, BatteryStatus?> statuses, IReadOnlySet<string> openChannelKeys, DateTimeOffset now)
     {
@@ -329,7 +338,10 @@ public sealed class HidPpBatteryProvider : IBatteryProvider
     }
 
     // A receiver without an answering mouse means the mouse sleeps or is off.
-    // shortcut: any open HID++ device counts as that receiver, so another Logitech device alone reads as Asleep; the placeholder disappears once a device with Unified Battery is found.
+    // shortcut: any open HID++ device counts as that receiver, so another Logitech device alone reads as Asleep; the placeholder shows
+    // only while an open channel has no device with Unified Battery found on it.
+    // shortcut: an open HID++ channel (receiver or cable) whose only device has no Unified Battery (skipped) counts as having no known
+    // device, so an unread saved tray device shows Asleep instead of Not found; upgrade if a user reports it.
     private ConnectionState MissingDeviceState() =>
         _channels.Any(channel => !channel.IsClosed) ? ConnectionState.Asleep : ConnectionState.NotFound;
 

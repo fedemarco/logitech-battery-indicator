@@ -13,6 +13,9 @@ internal static class TestData
         DateTimeOffset? at = null) =>
         new(connection, percent, charging, at ?? DateTimeOffset.UnixEpoch);
 
+    public static DeviceReading AsleepPlaceholder() =>
+        new(DeviceInfo.NoDeviceYet, Status(percent: null, connection: ConnectionState.Asleep));
+
     public static HistoryRecord Record(
         DateTimeOffset time,
         int? percent = 50,
