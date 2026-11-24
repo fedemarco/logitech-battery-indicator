@@ -17,7 +17,7 @@ The tray icon shows the charge at a glance; hover it for the exact percentage. T
 - **Start with Windows** – on by default, can be switched off in the tray menu. No admin rights needed.
 - **History panel** – left-click the tray icon for a 24 h / 7 day graph of the battery level and the time of the last charge.
 - **Time left** – an estimate of the hours left, based on how fast the battery drained over the last week.
-- **Update notifications** – off by default. When you turn on "New app versions" in the Notifications menu, the app checks about 2 minutes after each start and then once a day while it runs, and tells you when a newer release exists. It never downloads or installs anything: a click opens the download page. **Check for updates…** in the tray menu checks once, when you ask.
+- **Update notifications** – off by default. When you turn on "New app versions" in the Notifications menu, the app checks about 2 minutes after each start and then once a day while it runs, and tells you when a newer release exists. It never downloads or installs anything: a click opens the download page. The first check loads the network code of .NET, which stays in memory: about 3 MB more while the app runs. **Check for updates…** in the tray menu checks once, when you ask.
 - **Lightweight and private** – no installer, no background service, no account, no telemetry and no network access unless you turn on update notifications or choose Check for updates. Everything stays on your PC.
 
 ![History panel: current battery level, last charge, and a 24-hour graph of the battery level](docs/history-panel.png)
