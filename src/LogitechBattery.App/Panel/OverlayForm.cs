@@ -40,26 +40,11 @@ internal sealed class OverlayForm : Form
         public const int PlotRightMargin = 14;
         public const int PlotBottomMargin = 34; // room for the time labels
 
-        public const int PercentLabelWidth = 32;
-        public const int PercentLabelHeight = 16;
-        public const int PercentLabelGap = 4;
-
-        public const int TickLength = 4;
-        public const int TickLabelTop = 6;
-        public const int TickLabelWidth = 40;
-        public const int TickLabelHeight = 16;
-
-        public const float SolidLineWidth = 2;
-        public const float DashedLineWidth = 1.5f;
-        public const float SinglePointRadius = 3;
-
         public const float StatusFontSize = 15;
         public const float DetailFontSize = 12;
         public const float AxisFontSize = 11;
 
         public const float StandardDpi = 96f; // the DPI at which the layout sizes above are meant
-        public const int GridLineAlpha = 60; // faint, so the grid stays behind the data
-        public const float GridLineWidth = 1;
     }
 
     private sealed record TimeRangeOption(string Label, TimeSpan Window);
@@ -67,9 +52,7 @@ internal sealed class OverlayForm : Form
     private static readonly Color Background = ColorTranslator.FromHtml("#202020");
     private static readonly Color BorderColor = ColorTranslator.FromHtml("#3A3A3A");
     private static readonly Color PrimaryText = Color.White;
-    private static readonly Color SecondaryText = ColorTranslator.FromHtml("#9A9A9A");
-    private static readonly Color GridColor = Color.FromArgb(PanelLayout.GridLineAlpha, SecondaryText);
-    private static readonly Color LineColor = ColorTranslator.FromHtml("#4CC2FF");
+    internal static readonly Color SecondaryText = ColorTranslator.FromHtml("#9A9A9A");
     private static readonly Color SelectedToggle = ColorTranslator.FromHtml("#3A3A3A");
 
     private static readonly TimeRangeOption[] TimeRanges =
@@ -77,8 +60,6 @@ internal sealed class OverlayForm : Form
         new("24 h", HistoryChart.Day),
         new("7 d", HistoryChart.Week),
     ];
-
-    private static readonly int[] PercentGridLines = [0, 50, 100];
 
     private readonly bool _isSimulator; // the simulator has no history files; a real device may have none yet
     private BatteryHistory? _history;
@@ -206,10 +187,6 @@ internal sealed class OverlayForm : Form
         PanelLayout.Width - PanelLayout.PlotLeft - PanelLayout.PlotRightMargin,
         PanelLayout.PlotHeight);
 
-    /// <summary>A box of logical size whose corner lies at a pixel position moved by logical offsets.</summary>
-    private RectangleF BoxAt(PointF origin, float offsetX, float offsetY, float width, float height) =>
-        new(origin.X + offsetX * DpiScale, origin.Y + offsetY * DpiScale, width * DpiScale, height * DpiScale);
-
     private RectangleF Scaled(float left, float top, float width, float height) =>
         new(left * DpiScale, top * DpiScale, width * DpiScale, height * DpiScale);
 
@@ -263,105 +240,16 @@ internal sealed class OverlayForm : Form
 
     private void DrawGraph(Graphics graphics, DateTimeOffset now)
     {
-        var plot = PlotRect;
-        using var font = PixelFont(PanelLayout.AxisFontSize);
-        DrawAxes(graphics, plot, font, now);
-
-        if (EmptyMessage() is { } message)
-        {
-            DrawText(graphics, message, font, SecondaryText, plot, StringAlignment.Center, StringAlignment.Center);
-            return;
-        }
-
-        graphics.SetClip(plot);
-        DrawBatteryLine(graphics, plot, now);
-        if (_chart.Points.Count == 1)
-            DrawSinglePoint(graphics, ToPixel(_chart.Points[0], plot, now));
-        graphics.ResetClip();
-    }
-
-    private string? EmptyMessage()
-    {
-        if (_isSimulator)
-            return "No history in simulator mode";
-        return _chart.Points.Count == 0 ? "No history yet" : null;
-    }
-
-    private void DrawBatteryLine(Graphics graphics, RectangleF plot, DateTimeOffset now)
-    {
-        // Segments are drawn one by one, so round caps (not a line join) hide the notches at the bends.
-        using var solidPen = new Pen(LineColor, PanelLayout.SolidLineWidth * DpiScale) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-        using var dashedPen = new Pen(LineColor, PanelLayout.DashedLineWidth * DpiScale) { DashStyle = DashStyle.Dash };
-        foreach (var join in _chart.Joins)
-            graphics.DrawLine(join.IsSolid ? solidPen : dashedPen, ToPixel(join.From, plot, now), ToPixel(join.To, plot, now));
-    }
-
-    private void DrawSinglePoint(Graphics graphics, PointF center)
-    {
-        var radius = PanelLayout.SinglePointRadius * DpiScale;
-        using var brush = new SolidBrush(LineColor);
-        graphics.FillEllipse(brush, center.X - radius, center.Y - radius, 2 * radius, 2 * radius);
-    }
-
-    private PointF ToPixel(ChartPoint point, RectangleF plot, DateTimeOffset now) => new(
-        TimeToX(point.Time, plot, now),
-        PercentToY(point.Percent, plot));
-
-    private float TimeToX(DateTimeOffset time, RectangleF plot, DateTimeOffset now) =>
-        plot.Left + (float)HistoryChart.WindowFraction(time, now, _selectedRange.Window) * plot.Width;
-
-    private static float PercentToY(int percent, RectangleF plot) =>
-        plot.Bottom - (float)HistoryChart.HeightFraction(percent) * plot.Height;
-
-    private void DrawAxes(Graphics graphics, RectangleF plot, Font font, DateTimeOffset now)
-    {
-        using var gridPen = new Pen(GridColor, PanelLayout.GridLineWidth);
-        DrawPercentGrid(graphics, plot, font, gridPen);
-        DrawTimeTicks(graphics, plot, font, gridPen, now);
-    }
-
-    private void DrawPercentGrid(Graphics graphics, RectangleF plot, Font font, Pen gridPen)
-    {
-        foreach (var percent in PercentGridLines)
-        {
-            var gridLineY = PercentToY(percent, plot);
-            graphics.DrawLine(gridPen, plot.Left, gridLineY, plot.Right, gridLineY);
-
-            var label = BoxAt(
-                new PointF(plot.Left, gridLineY),
-                offsetX: -(PanelLayout.PercentLabelWidth + PanelLayout.PercentLabelGap),
-                offsetY: -PanelLayout.PercentLabelHeight / 2f,
-                PanelLayout.PercentLabelWidth,
-                PanelLayout.PercentLabelHeight);
-            DrawText(graphics, percent.ToString(), font, SecondaryText, label, StringAlignment.Far, StringAlignment.Center);
-        }
-    }
-
-    private void DrawTimeTicks(Graphics graphics, RectangleF plot, Font font, Pen gridPen, DateTimeOffset now)
-    {
-        var ticks = _selectedRange.Window == HistoryChart.Day
-            ? HistoryChart.HourTicks(now, TimeZoneInfo.Local)
-            : HistoryChart.DayTicks(now, TimeZoneInfo.Local);
-        foreach (var tick in ticks)
-        {
-            var tickX = TimeToX(tick.Time, plot, now);
-            graphics.DrawLine(gridPen, tickX, plot.Bottom, tickX, plot.Bottom + PanelLayout.TickLength * DpiScale);
-
-            var label = BoxAt(
-                new PointF(tickX, plot.Bottom),
-                offsetX: -PanelLayout.TickLabelWidth / 2f,
-                offsetY: PanelLayout.TickLabelTop,
-                PanelLayout.TickLabelWidth,
-                PanelLayout.TickLabelHeight);
-            DrawText(graphics, tick.Label, font, SecondaryText, label, StringAlignment.Center);
-        }
+        using var axisFont = PixelFont(PanelLayout.AxisFontSize);
+        var painter = new HistoryGraphPainter(DpiScale, _isSimulator, _chart, _selectedRange.Window);
+        painter.Draw(graphics, PlotRect, axisFont, now);
     }
 
     // Pixel-sized fonts follow the monitor DPI through DpiScale, not the system DPI.
     private Font PixelFont(float logicalPixels, FontStyle style = FontStyle.Regular) =>
         new("Segoe UI", logicalPixels * DpiScale, style, GraphicsUnit.Pixel);
 
-    private static void DrawText(
+    internal static void DrawText(
         Graphics graphics, string text, Font font, Color color, RectangleF area,
         StringAlignment horizontal, StringAlignment vertical = StringAlignment.Near)
     {
