@@ -132,8 +132,13 @@ internal sealed class HidPpChannel : IHidPpChannel, IDisposable
         };
     }
 
-    private void StartReading(HidStream stream) =>
+    private void StartReading(HidStream stream)
+    {
+        // HidSharp's default 3 s read timeout woke each reader with an exception every 3 s, the app's only constant wake-ups.
+        // Dispose still ends a read that waits without a timeout (HidSharp's close event).
+        stream.ReadTimeout = Timeout.Infinite;
         new Thread(() => ReadLoop(stream)) { IsBackground = true, Name = "HID++ reader" }.Start();
+    }
 
     private void ReadLoop(HidStream stream)
     {
@@ -142,9 +147,7 @@ internal sealed class HidPpChannel : IHidPpChannel, IDisposable
             var buffer = new byte[stream.Device.GetMaxInputReportLength()];
             while (true)
             {
-                int length;
-                try { length = stream.Read(buffer, 0, buffer.Length); }
-                catch (TimeoutException) { continue; } // no input for a while (HidSharp's ReadTimeout): keep listening
+                var length = stream.Read(buffer, 0, buffer.Length);
                 if (length > 0)
                     Deliver(buffer[..length]);
             }
